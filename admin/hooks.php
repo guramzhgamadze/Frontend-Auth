@@ -10,7 +10,7 @@ defined( 'ABSPATH' ) || exit;
 add_action( 'admin_enqueue_scripts', 'wpfa_admin_enqueue_scripts' );
 
 function wpfa_admin_enqueue_scripts( string $hook ): void {
-    if ( 'settings_page_wp-frontend-auth' !== $hook ) {
+    if ( 'toplevel_page_wp-frontend-auth' !== $hook ) {
         return;
     }
 }
@@ -23,7 +23,7 @@ add_filter( 'plugin_action_links_wp-frontend-auth/wp-frontend-auth.php', 'wpfa_p
 function wpfa_plugin_action_links( array $links ): array {
     array_unshift(
         $links,
-        '<a href="' . esc_url( admin_url( 'options-general.php?page=wp-frontend-auth' ) ) . '">'
+        '<a href="' . esc_url( admin_url( 'admin.php?page=wp-frontend-auth' ) ) . '">'
             . esc_html__( 'Settings', 'wp-frontend-auth' )
         . '</a>'
     );
