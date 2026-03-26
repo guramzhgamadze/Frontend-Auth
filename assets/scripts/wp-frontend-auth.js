@@ -1,0 +1,297 @@
+/**
+ * WP Frontend Auth – Frontend Script
+ *
+ * Bug 10 fix: rewritten from jQuery IIFE to ES6 arrow-function IIFE.
+ * jQuery is still used for $.ajax (required because jquery is a dependency)
+ * but the outer structure is now ES6. ajaxUrl was previously passed via
+ * wpFrontendAuth but never used (JS posted to the form's action URL, not
+ * admin-ajax.php). That is correct — forms post to their own page URL
+ * so WordPress processes them via template_redirect. ajaxUrl removed from
+ * the data object to avoid confusion.
+ *
+ * Note: strategy:'defer' means this script executes after DOM is parsed —
+ * DOMContentLoaded has already fired. No $(document).ready() / DOMContentLoaded
+ * listener needed; just call init() directly at the bottom.
+ */
+
+/* global wpFrontendAuth, jQuery */
+
+( () => {
+    'use strict';
+
+    // -----------------------------------------------------------------------
+    // AJAX form submission
+    // -----------------------------------------------------------------------
+
+    const bindForms = () => {
+        if ( ! wpFrontendAuth.useAjax ) {
+            return;
+        }
+
+        document.querySelectorAll( '.wpfa-inner-form[data-ajax="1"]' ).forEach( form => {
+            form.addEventListener( 'submit', e => {
+                e.preventDefault();
+                submitForm( form );
+            } );
+        } );
+    };
+
+    const submitForm = ( form ) => {
+        const container = form.closest( '.wpfa-form' );
+        const btn       = form.querySelector( '.wpfa-submit-button' );
+        const origText  = btn ? btn.textContent : '';
+
+        clearNotices( container );
+
+        if ( btn ) {
+            btn.disabled  = true;
+            btn.innerHTML = '<span class="wpfa-spinner" aria-hidden="true"></span>' + escHtml( origText );
+        }
+
+        // BUG-I fix: FormData was created but never used — jQuery serialize() is used instead.
+        // Forms post to their own action URL, processed by template_redirect.
+        jQuery.ajax( {
+            url:         form.getAttribute( 'action' ) || window.location.href,
+            method:      'POST',
+            data:        jQuery( form ).serialize() + '&wpfa_ajax=1',
+            dataType:    'json',
+        } )
+        .done( response => {
+            if ( response && response.success ) {
+                const payload = response.data || {};
+
+                if ( payload.redirect ) {
+                    window.location.href = payload.redirect;
+                    return;
+                }
+
+                if ( payload.message ) {
+                    showMessage( container, payload.message );
+                }
+
+                form.reset();
+            } else {
+                const errors = ( response && response.data && response.data.errors )
+                    ? response.data.errors
+                    : [ wpFrontendAuth.i18n.genericError ];
+
+                showErrors( container, errors );
+            }
+        } )
+        .fail( () => {
+            showErrors( container, [ wpFrontendAuth.i18n.genericError ] );
+        } )
+        .always( () => {
+            if ( btn ) {
+                btn.disabled    = false;
+                btn.textContent = origText;
+            }
+        } );
+    };
+
+    // -----------------------------------------------------------------------
+    // Notice helpers
+    // -----------------------------------------------------------------------
+
+    const clearNotices = ( container ) => {
+        container.querySelectorAll( '.wpfa-errors, .wpfa-messages' ).forEach( el => {
+            el.innerHTML = '';
+        } );
+    };
+
+    const getOrCreateList = ( container, cls, role ) => {
+        let list = container.querySelector( '.' + cls );
+        if ( ! list ) {
+            list = document.createElement( 'ul' );
+            list.className = cls;
+            if ( role ) {
+                list.setAttribute( 'role', role );
+            }
+            container.prepend( list );
+        }
+        return list;
+    };
+
+    const showErrors = ( container, messages ) => {
+        const list = getOrCreateList( container, 'wpfa-errors', 'alert' );
+        messages.forEach( msg => {
+            const li = document.createElement( 'li' );
+            li.className   = 'wpfa-error';
+            li.textContent = msg;
+            list.appendChild( li );
+        } );
+    };
+
+    const showMessage = ( container, message ) => {
+        const list = getOrCreateList( container, 'wpfa-messages', 'status' );
+        const li   = document.createElement( 'li' );
+        li.className   = 'wpfa-message';
+        li.textContent = message;
+        list.appendChild( li );
+    };
+
+    // -----------------------------------------------------------------------
+    // Show / hide password toggle
+    // -----------------------------------------------------------------------
+
+    const bindPasswordToggle = () => {
+        // Inject toggle buttons next to each password field.
+        document.querySelectorAll( '.wpfa-inner-form input[type="password"]' ).forEach( input => {
+            if ( ! input.id ) {
+                return;
+            }
+
+            const btn = document.createElement( 'button' );
+            btn.type           = 'button';
+            btn.className      = 'wpfa-password-toggle';
+            btn.dataset.target = input.id;
+            btn.dataset.show   = wpFrontendAuth.i18n.show;
+            btn.dataset.hide   = wpFrontendAuth.i18n.hide;
+            btn.setAttribute( 'aria-pressed', 'false' );
+            // BUG-J fix: use translatable string from PHP data object.
+            btn.setAttribute( 'aria-label', wpFrontendAuth.i18n.passwordToggle );
+            btn.textContent = btn.dataset.show;
+
+            input.insertAdjacentElement( 'afterend', btn );
+        } );
+
+        document.addEventListener( 'click', e => {
+            const btn = e.target.closest( '.wpfa-password-toggle' );
+            if ( ! btn ) {
+                return;
+            }
+            const input      = document.getElementById( btn.dataset.target );
+            if ( ! input ) {
+                return;
+            }
+            const isPassword = input.type === 'password';
+            input.type       = isPassword ? 'text' : 'password';
+            btn.textContent  = isPassword ? btn.dataset.hide : btn.dataset.show;
+            btn.setAttribute( 'aria-pressed', isPassword ? 'true' : 'false' );
+        } );
+    };
+
+    // -----------------------------------------------------------------------
+    // Password strength meter
+    // -----------------------------------------------------------------------
+
+    const bindPasswordStrength = () => {
+        const pass1 = document.getElementById( 'pass1' ) || document.getElementById( 'user_pass1' );
+        const pass2 = document.getElementById( 'pass2' ) || document.getElementById( 'user_pass2' );
+
+        if ( ! pass1 ) {
+            return;
+        }
+
+        let meter = document.getElementById( 'pass-strength-result' );
+        if ( ! meter ) {
+            meter            = document.createElement( 'div' );
+            meter.id         = 'pass-strength-result';
+            meter.setAttribute( 'aria-live', 'polite' );
+            pass1.closest( '.wpfa-field-wrap' )?.insertAdjacentElement( 'afterend', meter );
+        }
+
+        const update = () => checkStrength( pass1.value, pass2 ? pass2.value : '', meter );
+        pass1.addEventListener( 'input', update );
+        if ( pass2 ) {
+            pass2.addEventListener( 'input', update );
+        }
+    };
+
+    const checkStrength = ( pass1, pass2, meter ) => {
+        if ( ! pass1 ) {
+            meter.className   = '';
+            meter.textContent = '';
+            meter.style.opacity = '0';
+            return;
+        }
+
+        let strength = 0;
+
+        // Use WordPress's built-in strength meter if available.
+        if ( window.wp && wp.passwordStrength ) {
+            strength = wp.passwordStrength.meter(
+                pass1,
+                wp.passwordStrength.userInputBlacklist(),
+                pass2
+            );
+        } else {
+            // Simple fallback heuristic.
+            if ( pass1.length >= 8 )                                    strength++;
+            if ( pass1.length >= 12 )                                   strength++;
+            if ( /[A-Z]/.test( pass1 ) && /[a-z]/.test( pass1 ) )      strength++;
+            if ( /[0-9]/.test( pass1 ) )                                strength++;
+            if ( /[^A-Za-z0-9]/.test( pass1 ) )                        strength++;
+            if ( pass2 && pass1 !== pass2 )                             strength = Math.max( 0, strength - 2 );
+            strength = Math.min( 4, Math.max( 1, Math.ceil( strength / 1.25 ) ) );
+        }
+
+        // BUG-6 fix: labels come from PHP i18n data — fully translatable.
+        const labels  = [
+            '',
+            wpFrontendAuth.i18n.strengthVeryWeak,
+            wpFrontendAuth.i18n.strengthWeak,
+            wpFrontendAuth.i18n.strengthGood,
+            wpFrontendAuth.i18n.strengthStrong,
+        ];
+        const classes = [ '', 'short', 'bad', 'good', 'strong' ];
+
+        meter.className     = classes[ strength ] || 'short';
+        meter.textContent   = labels[ strength ] || '';
+        meter.style.opacity = '1';
+    };
+
+    // -----------------------------------------------------------------------
+    // Handle query-string success/info messages on page load
+    // -----------------------------------------------------------------------
+
+    const handleQueryMessages = () => {
+        const container = document.querySelector( '.wpfa-form' );
+        if ( ! container ) {
+            return;
+        }
+
+        const params = new URLSearchParams( window.location.search );
+
+        // BUG-7 fix: messages now come from PHP i18n data — fully translatable.
+        if ( params.get( 'password' ) === 'changed' ) {
+            showMessage( container, wpFrontendAuth.i18n.msgPasswordChanged );
+        }
+
+        if ( params.has( 'registered' ) ) {
+            showMessage( container, wpFrontendAuth.i18n.msgRegistered );
+        }
+
+        if ( params.has( 'checkemail' ) ) {
+            showMessage( container, wpFrontendAuth.i18n.msgCheckEmail );
+        }
+    };
+
+    // -----------------------------------------------------------------------
+    // Utility
+    // -----------------------------------------------------------------------
+
+    const escHtml = ( str ) => {
+        const d  = document.createElement( 'div' );
+        d.textContent = str;
+        return d.innerHTML;
+    };
+
+    // -----------------------------------------------------------------------
+    // Boot — safe to call directly because strategy:'defer' guarantees
+    // the DOM is fully parsed before this script executes.
+    // -----------------------------------------------------------------------
+
+    // Guard: bail out if the PHP-generated config object is missing.
+    // This can happen if wp_add_inline_script() failed or the script loaded
+    // on a page without the inline config block.
+    if ( typeof wpFrontendAuth === 'undefined' ) {
+        return;
+    }
+
+    bindForms();
+    bindPasswordToggle();
+    bindPasswordStrength();
+    handleQueryMessages();
+
+} )();

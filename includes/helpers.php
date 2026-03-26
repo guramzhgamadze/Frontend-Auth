@@ -1,0 +1,185 @@
+<?php
+/**
+ * WP Frontend Auth – Helpers
+ *
+ * @package WP_Frontend_Auth
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/* -----------------------------------------------------------------------
+ * Request helpers
+ * -------------------------------------------------------------------- */
+
+function wpfa_get_request_value( string $key, string $type = 'any' ) {
+    $type = strtoupper( $type );
+    if ( 'POST' === $type ) {
+        $value = $_POST[ $key ] ?? '';
+    } elseif ( 'GET' === $type ) {
+        $value = $_GET[ $key ] ?? '';
+    } else {
+        $value = $_REQUEST[ $key ] ?? '';
+    }
+    return is_string( $value ) ? wp_unslash( $value ) : $value;
+}
+
+function wpfa_is_post_request(): bool {
+    return 'POST' === strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ?? '' ) ) );
+}
+
+function wpfa_is_get_request(): bool {
+    return 'GET' === strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ?? '' ) ) );
+}
+
+function wpfa_is_ajax_request(): bool {
+    return (bool) wpfa_get_request_value( 'wpfa_ajax' );
+}
+
+/* -----------------------------------------------------------------------
+ * Redirect helpers
+ * -------------------------------------------------------------------- */
+
+function wpfa_validate_redirect( string $url ): string {
+    return wp_validate_redirect(
+        wp_sanitize_redirect( $url ),
+        apply_filters( 'wp_safe_redirect_fallback', admin_url(), 302 )
+    );
+}
+
+/* -----------------------------------------------------------------------
+ * URL helpers
+ * -------------------------------------------------------------------- */
+
+/**
+ * Build the URL for a given action.
+ * Prefers the real stored page ID when available; falls back to rewrite slugs.
+ */
+function wpfa_get_action_url( string $action, bool $network = false ): string {
+    // Prefer real page URL when a page has been created.
+    $page_id = wpfa_get_page_id( $action );
+    if ( $page_id ) {
+        $url = $network ? network_home_url( get_page_uri( $page_id ) ) : get_permalink( $page_id );
+        if ( $url ) {
+            return (string) apply_filters( 'wpfa_action_url', $url, $action );
+        }
+    }
+
+    // Fall back to virtual rewrite-rule URL.
+    if ( wpfa_use_permalinks() ) {
+        $slug = wpfa_get_action_slug( $action );
+        $base = $network ? network_home_url( '/' ) : home_url( '/' );
+        $url  = trailingslashit( $base . $slug );
+    } else {
+        $raw_base = $network ? network_home_url( '/', 'login' ) : home_url( '/', 'login' );
+        $url      = rtrim( $raw_base, '/' ) . '/wp-login.php';
+        $url      = add_query_arg( 'action', $action, $url );
+    }
+    return (string) apply_filters( 'wpfa_action_url', $url, $action );
+}
+
+function wpfa_get_action_slug( string $action ): string {
+    $default = wpfa_get_action_slug_default( $action );
+    $slug    = get_option( "wpfa_slug_{$action}", $default );
+    return (string) apply_filters( "wpfa_action_slug_{$action}", sanitize_title( $slug ) );
+}
+
+/* -----------------------------------------------------------------------
+ * Misc
+ * -------------------------------------------------------------------- */
+
+function wpfa_get_username_label( string $context = 'login' ): string {
+    if ( 'register' === $context ) {
+        $label = __( 'Username', 'wp-frontend-auth' );
+    } elseif ( wpfa_is_username_login_type() ) {
+        $label = __( 'Username', 'wp-frontend-auth' );
+    } elseif ( wpfa_is_email_login_type() ) {
+        $label = __( 'Email Address', 'wp-frontend-auth' );
+    } else {
+        $label = __( 'Username or Email Address', 'wp-frontend-auth' );
+    }
+    return (string) apply_filters( 'wpfa_username_label', $label, $context );
+}
+
+function wpfa_honeypot_field_name( string $hour = '' ): string {
+    if ( '' === $hour ) {
+        $hour = gmdate( 'YmdH' );
+    }
+    return 'hp_' . substr( md5( wp_salt( 'auth' ) . $hour ), 0, 8 );
+}
+
+function wpfa_honeypot_is_spam(): bool {
+    if ( ! wpfa_use_honeypot() ) {
+        return false;
+    }
+    $current_hour  = gmdate( 'YmdH' );
+    $previous_hour = gmdate( 'YmdH', time() - HOUR_IN_SECONDS );
+
+    $field_current  = wpfa_honeypot_field_name( $current_hour );
+    $field_previous = wpfa_honeypot_field_name( $previous_hour );
+
+    $value_current  = wp_unslash( $_POST[ $field_current ]  ?? '' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+    $value_previous = wp_unslash( $_POST[ $field_previous ] ?? '' ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+
+    // INFO fix: !empty() already implies isset(), second isset() check removed.
+    return ! empty( $value_current ) || ! empty( $value_previous );
+}
+
+function wpfa_honeypot_field_html(): string {
+    if ( ! wpfa_use_honeypot() ) {
+        return '';
+    }
+    $field = esc_attr( wpfa_honeypot_field_name() );
+    return '<div style="display:none!important" aria-hidden="true">'
+        . '<label for="' . $field . '">' . esc_html__( 'Leave this empty', 'wp-frontend-auth' ) . '</label>'
+        . '<input type="text" id="' . $field . '" name="' . $field . '" value="" autocomplete="off" tabindex="-1">'
+        . '</div>';
+}
+
+function wpfa_send_ajax_success( $data = null ): void {
+    wp_send_json_success( apply_filters( 'wpfa_ajax_success_data', $data ) );
+}
+
+function wpfa_send_ajax_error( $data = null ): void {
+    wp_send_json_error( apply_filters( 'wpfa_ajax_error_data', $data ) );
+}
+
+/* -----------------------------------------------------------------------
+ * Elementor context detection
+ * MEDIUM fix: added REST_REQUEST check for Elementor REST API calls.
+ * -------------------------------------------------------------------- */
+
+function wpfa_is_elementor_context(): bool {
+    if ( ! defined( 'ELEMENTOR_VERSION' ) ) {
+        return false;
+    }
+
+    // MEDIUM FIX: Elementor uses WP REST API for saving/loading templates.
+    // URL filters must not mutate data inside these requests.
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        $route = $GLOBALS['wp']->query_vars['rest_route'] ?? '';
+        if ( str_contains( (string) $route, '/elementor/' ) ) {
+            return true;
+        }
+    }
+
+    if ( is_admin() && isset( $_GET['action'] ) && 'elementor' === $_GET['action'] ) {
+        return true;
+    }
+    if ( isset( $_GET['elementor-preview'] ) ) {
+        return true;
+    }
+    if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) {
+        $action = isset( $_REQUEST['action'] ) ? sanitize_key( $_REQUEST['action'] ) : '';
+        if ( str_starts_with( $action, 'elementor_' ) ) {
+            return true;
+        }
+    }
+    if (
+        isset( \Elementor\Plugin::$instance )
+        && isset( \Elementor\Plugin::$instance->preview )
+        && \Elementor\Plugin::$instance->preview->is_preview_mode()
+    ) {
+        return true;
+    }
+    return false;
+}
