@@ -282,13 +282,6 @@
     // the DOM is fully parsed before this script executes.
     // -----------------------------------------------------------------------
 
-    // Guard: bail out if the PHP-generated config object is missing.
-    // This can happen if wp_add_inline_script() failed or the script loaded
-    // on a page without the inline config block.
-    if ( typeof wpFrontendAuth === 'undefined' ) {
-        return;
-    }
-
     bindForms();
     bindPasswordToggle();
     bindPasswordStrength();

@@ -325,7 +325,7 @@ function wpfa_handle_lostpassword(): void {
     }
 
     $result = retrieve_password(
-        sanitize_text_field( wpfa_get_request_value( 'user_login', 'post' ) )
+        sanitize_text_field( wp_unslash( $_POST['user_login'] ?? '' ) )
     );
 
     if ( is_wp_error( $result ) ) {
@@ -503,12 +503,11 @@ function wpfa_send_new_user_notifications( int $user_id, string $notify = 'both'
  * are enabled. The standard email tells users to click to set a password —
  * but they already set one. Suppress the user email; keep admin email.
  */
-add_filter( 'wp_send_new_user_notification_to_user', 'wpfa_maybe_suppress_user_notification', 10, 2 );
+add_filter( 'wp_send_new_user_notifications', 'wpfa_maybe_suppress_user_notification', 10, 2 );
 
 function wpfa_maybe_suppress_user_notification( bool $send, WP_User $user ): bool {
-    // 'wp_send_new_user_notification_to_user' filter (WP 6.1+):
-    // ( bool $send, WP_User $user ) — controls whether the user-facing email is sent.
-    // Source: developer.wordpress.org/reference/hooks/wp_send_new_user_notification_to_user/
+    // 'wp_send_new_user_notifications' filter signature (WP 6.4+):
+    // ( bool $send, WP_User $user ) — second param is WP_User, not int.
     // Only intercept during a WPFA registration POST when user passwords are on.
     if ( ! wpfa_is_post_request() ) {
         return $send;

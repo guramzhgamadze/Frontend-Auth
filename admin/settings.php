@@ -17,13 +17,13 @@ add_action( 'admin_menu', 'wpfa_admin_add_menu' );
 
 function wpfa_admin_add_menu(): void {
     add_menu_page(
-        __( 'Frontend Auth', 'wp-frontend-auth' ),      // page title
-        __( 'Frontend Auth', 'wp-frontend-auth' ),       // menu title
-        'manage_options',                                 // capability
-        'wp-frontend-auth',                               // menu slug
-        'wpfa_admin_settings_page',                       // callback
-        'dashicons-lock',                                 // icon
-        71                                                // position (after Users = 70)
+        __( 'WP Frontend Auth', 'wp-frontend-auth' ),
+        __( 'Frontend Auth', 'wp-frontend-auth' ),
+        'manage_options',
+        'wp-frontend-auth',
+        'wpfa_admin_settings_page',
+        'dashicons-lock',
+        80
     );
 }
 

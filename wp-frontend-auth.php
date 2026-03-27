@@ -2,10 +2,11 @@
 /**
  * Plugin Name:       WP Frontend Auth
  * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.2.1
+ * Version:           1.2.0
  * Requires at least: 6.9
  * Requires PHP:      8.1
- * Author:            Your Name
+ * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
+ * Author:            Guram Zhgamadze
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       wp-frontend-auth
@@ -18,7 +19,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WPFA_VERSION', '1.2.1' );
+define( 'WPFA_VERSION', '1.2.0' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -57,20 +58,9 @@ if ( is_admin() ) {
 }
 
 /* -----------------------------------------------------------------------
- * Elementor integration — loaded only when Elementor is active.
+ * Elementor widgets — loaded only when Elementor is active.
+ * Guarded by did_action() so it works on both plugins_loaded and later.
  * -------------------------------------------------------------------- */
-
-// Register the custom widget category in the Elementor panel sidebar.
-add_action( 'elementor/elements/categories_registered', 'wpfa_maybe_register_elementor_category' );
-function wpfa_maybe_register_elementor_category( \Elementor\Elements_Manager $elements_manager ): void {
-    if ( ! did_action( 'elementor/loaded' ) ) {
-        return;
-    }
-    require_once WPFA_PATH . 'includes/elementor/class-wpfa-elementor-widgets.php';
-    wpfa_register_elementor_category( $elements_manager );
-}
-
-// Register the widgets themselves.
 add_action( 'elementor/widgets/register', 'wpfa_load_elementor_widgets' );
 function wpfa_load_elementor_widgets( \Elementor\Widgets_Manager $manager ): void {
     if ( ! did_action( 'elementor/loaded' ) ) {

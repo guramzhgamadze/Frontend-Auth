@@ -82,7 +82,7 @@
 .wpfa-field:focus {
     border-color: #0073aa;
     box-shadow: 0 0 0 1px #0073aa;
-    outline: 2px solid transparent; /* fallback: visible via box-shadow */
+    outline: none; /* outline replaced by box-shadow below */
 }
 .wpfa-field:focus-visible {
     outline: 3px solid #0073aa;
@@ -130,7 +130,7 @@
 .wpfa-button:focus {
     background: #005d8c;
     box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.3);
-    outline: 2px solid transparent; /* fallback: visible via box-shadow */
+    outline: none; /* replaced by focus-visible below */
 }
 .wpfa-button:focus-visible {
     outline: 3px solid #0073aa;
@@ -201,33 +201,6 @@
 
 .wpfa-dashboard-links a:hover {
     text-decoration: underline;
-}
-
-/* -----------------------------------------------------------------------
-   Password toggle button
-------------------------------------------------------------------------- */
-.wpfa-password-toggle {
-    background: none;
-    border: 1px solid #8c8f94;
-    border-radius: 3px;
-    color: #2271b1;
-    cursor: pointer;
-    font-size: 0.8rem;
-    margin-top: 0.35em;
-    padding: 0.2em 0.6em;
-    display: inline-block;
-}
-
-.wpfa-password-toggle:hover,
-.wpfa-password-toggle:focus {
-    background: #f0f6fc;
-    border-color: #2271b1;
-    color: #135e96;
-}
-
-.wpfa-password-toggle:focus-visible {
-    outline: 3px solid #2271b1;
-    outline-offset: 1px;
 }
 
 /* -----------------------------------------------------------------------
