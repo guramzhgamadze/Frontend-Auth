@@ -14,16 +14,46 @@ defined( 'ABSPATH' ) || exit;
  * Return the anonymised IP used as the transient key.
  * IPv4: last octet zeroed. IPv6: last 80 bits zeroed.
  *
+ * SECURITY FIX (v1.4.5):
+ * The previous implementation trusted HTTP_CF_CONNECTING_IP and
+ * HTTP_X_FORWARDED_FOR unconditionally. Both headers are set by the CLIENT
+ * and can be forged freely on any server not sitting behind a verified proxy.
+ * An attacker could send "X-Forwarded-For: 1.2.3.4" with each request to
+ * rotate their apparent IP, completely bypassing rate limiting.
+ *
+ * Fix: default to REMOTE_ADDR only, which is the actual TCP connection IP
+ * and cannot be forged. Site admins running behind Cloudflare or a trusted
+ * reverse proxy can use the 'wpfa_rate_limit_ip_headers' filter to add
+ * additional headers — but ONLY after verifying that REMOTE_ADDR belongs to
+ * the trusted proxy infrastructure.
+ *
+ * Source: developer.wordpress.org/reference/functions/wp_get_server_protocol/
+ *         OWASP IP Address Spoofing via HTTP Headers
+ *
  * @return string
  */
 function wpfa_rate_limit_get_ip() {
     $ip = '';
 
-    $headers = array(
-        'HTTP_CF_CONNECTING_IP',
-        'HTTP_X_FORWARDED_FOR',
-        'REMOTE_ADDR',
-    );
+    /**
+     * Filter the list of $_SERVER headers checked for the client IP.
+     *
+     * IMPORTANT: only add forwarded-for headers when you have verified that
+     * REMOTE_ADDR belongs to a trusted proxy (e.g. Cloudflare's published IP
+     * ranges). Without that verification, any client can forge these headers
+     * to bypass rate limiting.
+     *
+     * Example for Cloudflare sites (check REMOTE_ADDR first!):
+     *   add_filter( 'wpfa_rate_limit_ip_headers', function( $headers ) {
+     *       // Verify REMOTE_ADDR is a Cloudflare IP before trusting CF header.
+     *       $cf_ranges = [ '103.21.244.0/22', '103.22.200.0/22', /* ... *\/ ];
+     *       // ... validate REMOTE_ADDR against $cf_ranges, then:
+     *       return [ 'HTTP_CF_CONNECTING_IP', 'REMOTE_ADDR' ];
+     *   } );
+     *
+     * @param string[] $headers Ordered list of $_SERVER keys to try.
+     */
+    $headers = (array) apply_filters( 'wpfa_rate_limit_ip_headers', [ 'REMOTE_ADDR' ] );
 
     foreach ( $headers as $key ) {
         if ( ! empty( $_SERVER[ $key ] ) ) {

@@ -52,19 +52,13 @@ function wpfa_validate_redirect( string $url ): string {
 
 /**
  * Build the URL for a given action.
- * Prefers the real stored page ID when available; falls back to rewrite slugs.
+ *
+ * ALWAYS uses the slug from the user's settings (wpfa_slug_*).
+ * Never uses get_permalink() on stored page IDs — that creates an
+ * unsolvable desync between "what the user configured in settings"
+ * and "what the auto-created page's actual post_name is."
  */
 function wpfa_get_action_url( string $action, bool $network = false ): string {
-    // Prefer real page URL when a page has been created.
-    $page_id = wpfa_get_page_id( $action );
-    if ( $page_id ) {
-        $url = $network ? network_home_url( get_page_uri( $page_id ) ) : get_permalink( $page_id );
-        if ( $url ) {
-            return (string) apply_filters( 'wpfa_action_url', $url, $action );
-        }
-    }
-
-    // Fall back to virtual rewrite-rule URL.
     if ( wpfa_use_permalinks() ) {
         $slug = wpfa_get_action_slug( $action );
         $base = $network ? network_home_url( '/' ) : home_url( '/' );
@@ -136,11 +130,15 @@ function wpfa_honeypot_field_html(): string {
 }
 
 function wpfa_send_ajax_success( $data = null ): void {
-    wp_send_json_success( apply_filters( 'wpfa_ajax_success_data', $data ) );
+    // Explicit 200 is critical: if the form posts to a virtual/404 URL,
+    // WordPress sets status_header(404) before template_redirect fires.
+    // wp_send_json_success() with null $status_code does NOT override it,
+    // so jQuery sees a 404 JSON response and fires .fail() instead of .done().
+    wp_send_json_success( apply_filters( 'wpfa_ajax_success_data', $data ), 200 );
 }
 
 function wpfa_send_ajax_error( $data = null ): void {
-    wp_send_json_error( apply_filters( 'wpfa_ajax_error_data', $data ) );
+    wp_send_json_error( apply_filters( 'wpfa_ajax_error_data', $data ), 400 );
 }
 
 /* -----------------------------------------------------------------------

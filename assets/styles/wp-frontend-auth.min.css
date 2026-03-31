@@ -1,20 +1,114 @@
 /*
  * WP Frontend Auth – Frontend Styles
- * Clean, accessible, theme-agnostic styling.
+ *
+ * Alignment model (Elementor V4 compatible):
+ *   {{WRAPPER}}        = .elementor-widget-wpfa-login (widget root, managed by Elementor)
+ *   .wpfa-form-wrap    = our content wrapper — width/max-width/alignment target this element
+ *   .wpfa-form-title   = lives INSIDE .wpfa-form-wrap (above the form)
+ *   .wpfa-form         = the actual form card (bg, padding, border, shadow)
+ *
+ * NEVER target .elementor-widget-container (removed in V4 Atomic).
+ * NEVER set width !important on [class*="elementor-widget-wpfa-"].
+ * NEVER add display:flex to {{WRAPPER}} — the widget root is already a flex
+ * item inside Elementor's column/container; mutating its display property
+ * breaks cross-axis behaviour in both legacy and Flexbox Container contexts.
+ *
+ * ALIGNMENT: uses margin-left/right auto technique (same as Elementor's own
+ * image and button widgets). Only visible when Form Width is set to a value
+ * smaller than the column — a 100%-wide element cannot be offset regardless
+ * of margin values. This is correct CSS behaviour, not a bug.
  */
 
 /* -----------------------------------------------------------------------
-   Container
+   CSS Custom Properties
 ------------------------------------------------------------------------- */
 .wpfa {
-    font-size: 1rem;
-    line-height: 1.5;
+    --wpfa-font-size: 1rem;
+    --wpfa-line-height: 1.5;
+    --wpfa-text-color: inherit;
+    --wpfa-label-color: inherit;
+    --wpfa-label-weight: 600;
+    --wpfa-required-color: #d63638;
+    --wpfa-field-bg: #fff;
+    --wpfa-field-color: inherit;
+    --wpfa-field-border: 1px solid #8c8f94;
+    --wpfa-field-radius: 3px;
+    --wpfa-field-padding: 0.5em 0.75em;
+    --wpfa-field-focus-color: currentColor;
+    --wpfa-field-focus-shadow: none;
+    --wpfa-field-spacing: 1em;
+    --wpfa-btn-bg: #2271b1;
+    --wpfa-btn-color: #fff;
+    --wpfa-btn-border: 1px solid transparent;
+    --wpfa-btn-radius: 3px;
+    --wpfa-btn-padding: 0.55em 1.25em;
+    --wpfa-btn-hover-bg: #135e96;
+    --wpfa-btn-hover-color: #fff;
+    --wpfa-link-color: #2271b1;
+    --wpfa-link-hover-color: #135e96;
+    --wpfa-error-bg: #fef7f7;
+    --wpfa-error-color: #50575e;
+    --wpfa-error-border: #d63638;
+    --wpfa-msg-bg: #f0f6fc;
+    --wpfa-msg-color: #1d2327;
+    --wpfa-msg-border: #2271b1;
+}
+
+/* -----------------------------------------------------------------------
+   Content Wrapper — width/max-width target; alignment via parent flex
+   Elementor controls set width, max-width on this element.
+   Alignment (left/center/right) is set by justify-content on {{WRAPPER}}
+   (the parent flex container) via the form_align control. When form_align
+   is active the control also zeroes margin-left/right here so auto-margins
+   don't override the flex layout. When form_align is NOT active, the
+   static margin:auto below acts as a non-flex centering fallback.
+   Per elementor-patterns.md V4 rules: NEVER override the widget root
+   element's sizing — Elementor manages it via --container-widget-width.
+------------------------------------------------------------------------- */
+
+.wpfa-form-wrap {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;          /* allow shrinking in flex context */
+    box-sizing: border-box;
+    /* Non-flex centering fallback — used when form_width is set but
+       form_align is not. The form_align control overrides these to 0
+       via its {{WRAPPER}} .wpfa-form-wrap selector when active. */
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* -----------------------------------------------------------------------
+   Base container
+------------------------------------------------------------------------- */
+.wpfa {
+    font-size: var(--wpfa-font-size);
+    line-height: var(--wpfa-line-height);
+    color: var(--wpfa-text-color);
 }
 
 .wpfa *,
 .wpfa *::before,
 .wpfa *::after {
     box-sizing: border-box;
+}
+
+/* The form card itself — bg, padding, shadow go here */
+.wpfa-form {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Editor preview form in Reset Password — suppress visual control styles
+   so the dashed-border wrapper isn't double-decorated */
+.wpfa-form--preview {
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
 }
 
 /* -----------------------------------------------------------------------
@@ -29,7 +123,6 @@
 
 .wpfa-error,
 .wpfa-message {
-    border-left: 4px solid #0073aa;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     display: block;
     margin: 0 0 0.5em;
@@ -38,55 +131,52 @@
 }
 
 .wpfa-error {
-    background: #fef7f7;
-    border-left-color: #d63638;
-    color: #50575e;
+    background: var(--wpfa-error-bg);
+    border-left: 4px solid var(--wpfa-error-border);
+    color: var(--wpfa-error-color);
 }
 
 .wpfa-message {
-    background: #f0f6fc;
-    border-left-color: #0073aa;
-    color: #1d2327;
+    background: var(--wpfa-msg-bg);
+    border-left: 4px solid var(--wpfa-msg-border);
+    color: var(--wpfa-msg-color);
 }
 
 /* -----------------------------------------------------------------------
    Form fields
 ------------------------------------------------------------------------- */
 .wpfa-field-wrap {
-    margin-bottom: 1em;
+    margin-bottom: var(--wpfa-field-spacing);
 }
 
 .wpfa-label {
     display: block;
-    font-weight: 600;
+    font-weight: var(--wpfa-label-weight);
+    color: var(--wpfa-label-color);
     margin-bottom: 0.35em;
 }
 
 .wpfa .wpfa-required {
-    color: #d63638;
+    color: var(--wpfa-required-color);
     margin-left: 2px;
 }
 
 .wpfa-field {
-    background: #fff;
-    border: 1px solid #8c8f94;
-    border-radius: 3px;
-    color: #1d2327;
+    background: var(--wpfa-field-bg);
+    border: var(--wpfa-field-border);
+    border-radius: var(--wpfa-field-radius);
+    color: var(--wpfa-field-color);
     display: block;
-    padding: 0.5em 0.75em;
+    padding: var(--wpfa-field-padding);
     width: 100%;
-    font-size: 1rem;
-    transition: border-color 0.15s ease;
+    font-size: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .wpfa-field:focus {
-    border-color: #0073aa;
-    box-shadow: 0 0 0 1px #0073aa;
-    outline: none; /* outline replaced by box-shadow below */
-}
-.wpfa-field:focus-visible {
-    outline: 3px solid #0073aa;
-    outline-offset: 1px;
+    border-color: var(--wpfa-field-focus-color);
+    box-shadow: var(--wpfa-field-focus-shadow);
+    outline: none;
 }
 
 .wpfa-description {
@@ -114,34 +204,29 @@
 }
 
 .wpfa-button {
-    background: #0073aa;
-    border: 1px solid #006799;
-    border-radius: 3px;
-    color: #fff;
+    background: var(--wpfa-btn-bg);
+    border: var(--wpfa-btn-border);
+    border-radius: var(--wpfa-btn-radius);
+    color: var(--wpfa-btn-color);
     cursor: pointer;
     font-size: 0.95rem;
     font-weight: 600;
-    padding: 0.55em 1.25em;
+    padding: var(--wpfa-btn-padding);
     text-decoration: none;
-    transition: background 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .wpfa-button:hover,
 .wpfa-button:focus {
-    background: #005d8c;
-    box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.3);
-    outline: none; /* replaced by focus-visible below */
-}
-.wpfa-button:focus-visible {
-    outline: 3px solid #0073aa;
-    outline-offset: 2px;
+    background: var(--wpfa-btn-hover-bg);
+    color: var(--wpfa-btn-hover-color);
+    outline: none;
 }
 
 .wpfa-button:active {
-    background: #004e77;
+    opacity: 0.85;
 }
 
-/* Loading state */
 .wpfa-button[disabled],
 .wpfa-button.wpfa-loading {
     cursor: not-allowed;
@@ -157,50 +242,36 @@
 }
 
 .wpfa-links a {
-    color: #0073aa;
+    color: var(--wpfa-link-color);
     text-decoration: none;
 }
 
 .wpfa-links a:hover,
 .wpfa-links a:focus {
+    color: var(--wpfa-link-hover-color);
     text-decoration: underline;
 }
 
 /* -----------------------------------------------------------------------
-   Dashboard widget
+   Password toggle button
 ------------------------------------------------------------------------- */
-.wpfa-dashboard {
-    text-align: center;
-    padding: 1em 0;
-}
-
-.wpfa-dashboard-avatar img {
-    border-radius: 50%;
+.wpfa-password-toggle {
+    background: none;
+    border: 1px solid #8c8f94;
+    border-radius: 3px;
+    color: var(--wpfa-link-color);
+    cursor: pointer;
+    font-size: 0.8rem;
+    margin-top: 0.35em;
+    padding: 0.2em 0.6em;
     display: inline-block;
 }
 
-.wpfa-dashboard-greeting {
-    font-weight: 600;
-    margin: 0.75em 0;
-}
-
-.wpfa-dashboard-links {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-}
-
-.wpfa-dashboard-links li {
-    margin-bottom: 0.35em;
-}
-
-.wpfa-dashboard-links a {
-    color: #0073aa;
-    text-decoration: none;
-}
-
-.wpfa-dashboard-links a:hover {
-    text-decoration: underline;
+.wpfa-password-toggle:hover,
+.wpfa-password-toggle:focus {
+    border-color: var(--wpfa-link-color);
+    color: var(--wpfa-link-hover-color);
+    outline: none;
 }
 
 /* -----------------------------------------------------------------------

@@ -122,27 +122,32 @@ function wpfa_enqueue_assets(): void {
     wp_enqueue_style( 'wp-frontend-auth' );
     wp_enqueue_script( 'wp-frontend-auth' );
 
-    $script_data = wp_json_encode( apply_filters( 'wpfa_script_data', [
-        'useAjax' => wpfa_use_ajax(),
-        'action'  => wpfa_get_current_action(),
-        'i18n'    => [
-            'genericError'       => __( 'An error occurred. Please try again.', 'wp-frontend-auth' ),
-            'show'               => __( 'Show', 'wp-frontend-auth' ),
-            'hide'               => __( 'Hide', 'wp-frontend-auth' ),
-            'passwordToggle'     => __( 'Toggle password visibility', 'wp-frontend-auth' ),
-            'strengthVeryWeak'   => __( 'Very weak', 'wp-frontend-auth' ),
-            'strengthWeak'       => __( 'Weak', 'wp-frontend-auth' ),
-            'strengthGood'       => __( 'Good', 'wp-frontend-auth' ),
-            'strengthStrong'     => __( 'Strong', 'wp-frontend-auth' ),
-            'msgRegistered'      => __( 'Registration successful! Please check your email for login instructions.', 'wp-frontend-auth' ),
-            'msgCheckEmail'      => __( 'Check your email for a link to reset your password.', 'wp-frontend-auth' ),
-            'msgPasswordChanged' => __( 'Your password has been reset. You can now log in.', 'wp-frontend-auth' ),
-        ],
-    ] ) );
-
-    if ( $script_data ) {
-        wp_add_inline_script( 'wp-frontend-auth', 'const wpFrontendAuth = ' . $script_data . ';', 'before' );
-    }
+    /*
+     * BUG FIX (v1.4.3): const wpFrontendAuth declared twice — SyntaxError
+     *
+     * Previously this function contained a copy of the inline-script block
+     * that also lives in wpfa_maybe_add_inline_script(). On a real WordPress
+     * page built with Elementor widgets (not a virtual rewrite page):
+     *
+     *   1. wpfa_enqueue_assets() runs on wp_enqueue_scripts (priority 10).
+     *      wpfa_is_elementor_context() returns FALSE on the public frontend
+     *      (it only returns true in the editor, preview, AJAX, or REST
+     *      contexts). wpfa_is_wpfa_page() returns TRUE. So the old code
+     *      called wp_add_inline_script() and output "const wpFrontendAuth".
+     *
+     *   2. Elementor then calls Widget_Base::render() for each WPFA widget.
+     *      render() calls wpfa_maybe_add_inline_script(), whose static $done
+     *      flag was never set by step 1, so it called wp_add_inline_script()
+     *      again — producing a second "const wpFrontendAuth" declaration.
+     *
+     *   Result: browser throws "Identifier 'wpFrontendAuth' has already been
+     *   declared" and the entire wp-frontend-auth.js file fails to execute.
+     *
+     * Fix: delegate to wpfa_maybe_add_inline_script() here. Its static $done
+     * flag is the single source of truth. Whichever path fires first sets the
+     * flag; the other path becomes a no-op. No double-declaration is possible.
+     */
+    wpfa_maybe_add_inline_script();
 
     do_action( 'login_enqueue_scripts' );
 }

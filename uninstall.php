@@ -30,7 +30,6 @@ $options = [
     'wpfa_slug_register',
     'wpfa_slug_lostpassword',
     'wpfa_slug_resetpass',
-    'wpfa_slug_dashboard',
 ];
 
 $page_actions = [ 'login', 'register', 'lostpassword', 'resetpass' ];

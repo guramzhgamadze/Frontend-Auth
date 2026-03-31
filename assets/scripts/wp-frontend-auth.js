@@ -9,9 +9,17 @@
  * so WordPress processes them via template_redirect. ajaxUrl removed from
  * the data object to avoid confusion.
  *
- * Note: strategy:'defer' means this script executes after DOM is parsed —
- * DOMContentLoaded has already fired. No $(document).ready() / DOMContentLoaded
- * listener needed; just call init() directly at the bottom.
+ * LOAD ORDER NOTE (v1.4.5 fix — previously stated strategy:'defer' incorrectly):
+ * This script is registered with [ 'in_footer' => true ] and NO strategy:'defer'.
+ * Defer is intentionally omitted for Elementor compatibility — Elementor's own
+ * scripts are not deferred, and widget scripts must execute in document order
+ * after Elementor's boot code. With in_footer:true the script tag is placed
+ * at the bottom of <body>; the HTML parser has fully processed all DOM nodes
+ * above the tag by that point, so direct init() calls at the bottom of this
+ * IIFE are safe without any DOMContentLoaded listener.
+ *
+ * Source: developer.wordpress.org/reference/functions/wp_register_script/
+ *         make.wordpress.org/core/2023/07/14/registering-scripts-with-async-and-defer-attributes-in-wordpress-6-3/
  */
 
 /* global wpFrontendAuth, jQuery */
@@ -134,9 +142,14 @@
     // Show / hide password toggle
     // -----------------------------------------------------------------------
 
-    const bindPasswordToggle = () => {
+    // Fix D — accepts a scope element so it can be re-run per widget instance
+    const bindPasswordToggle = ( scope = document ) => {
         // Inject toggle buttons next to each password field.
-        document.querySelectorAll( '.wpfa-inner-form input[type="password"]' ).forEach( input => {
+        // Guard: skip inputs that already have a toggle sibling to prevent duplicates.
+        scope.querySelectorAll( '.wpfa-inner-form input[type="password"]' ).forEach( input => {
+            if ( input.nextElementSibling && input.nextElementSibling.classList.contains( 'wpfa-password-toggle' ) ) {
+                return; // already processed
+            }
             if ( ! input.id ) {
                 return;
             }
@@ -145,14 +158,22 @@
             btn.type           = 'button';
             btn.className      = 'wpfa-password-toggle';
             btn.dataset.target = input.id;
-            btn.dataset.show   = wpFrontendAuth.i18n.show;
-            btn.dataset.hide   = wpFrontendAuth.i18n.hide;
+            // Per-field values override global i18n — set by Elementor widget controls
+            // via data-toggle-show / data-toggle-hide attrs rendered on the <input>.
+            btn.dataset.show   = input.dataset.toggleShow || wpFrontendAuth.i18n.show;
+            btn.dataset.hide   = input.dataset.toggleHide || wpFrontendAuth.i18n.hide;
             btn.setAttribute( 'aria-pressed', 'false' );
             // BUG-J fix: use translatable string from PHP data object.
             btn.setAttribute( 'aria-label', wpFrontendAuth.i18n.passwordToggle );
             btn.textContent = btn.dataset.show;
 
             input.insertAdjacentElement( 'afterend', btn );
+
+            // Fix J — add flex-layout modifier class to the parent field wrap
+            const wrap = input.closest( '.wpfa-field-wrap' );
+            if ( wrap ) {
+                wrap.classList.add( 'wpfa-field-wrap--password' );
+            }
         } );
 
         document.addEventListener( 'click', e => {
@@ -175,9 +196,10 @@
     // Password strength meter
     // -----------------------------------------------------------------------
 
-    const bindPasswordStrength = () => {
-        const pass1 = document.getElementById( 'pass1' ) || document.getElementById( 'user_pass1' );
-        const pass2 = document.getElementById( 'pass2' ) || document.getElementById( 'user_pass2' );
+    // Fix D — scope-aware version for element_ready re-binding
+    const bindPasswordStrength = ( scope = document ) => {
+        const pass1 = scope.querySelector( '#pass1, #user_pass1' );
+        const pass2 = scope.querySelector( '#pass2, #user_pass2' );
 
         if ( ! pass1 ) {
             return;
@@ -278,13 +300,41 @@
     };
 
     // -----------------------------------------------------------------------
-    // Boot — safe to call directly because strategy:'defer' guarantees
-    // the DOM is fully parsed before this script executes.
+    // Boot — safe to call directly because in_footer:true places this script
+    // tag after all DOM content in <body>, so all elements above are already
+    // parsed and accessible at execution time. No DOMContentLoaded needed.
     // -----------------------------------------------------------------------
 
+    // Guard: bail out if the PHP-generated config object is missing.
+    // This can happen if wp_add_inline_script() failed or the script loaded
+    // on a page without the inline config block.
+    if ( typeof wpFrontendAuth === 'undefined' ) {
+        return;
+    }
+
     bindForms();
-    bindPasswordToggle();
     bindPasswordStrength();
     handleQueryMessages();
+
+    // Fix D — direct call for non-Elementor pages (classic WP pages, shortcodes, sidebar widgets)
+    bindPasswordToggle( document );
+
+    // Fix D — also bind via Elementor element_ready so toggles survive editor re-renders
+    // and AJAX-loaded pages (Theme Builder popups, loop items, etc.)
+    // Uses window.addEventListener('elementor/frontend/init') per official Elementor docs —
+    // NOT if(window.elementorFrontend), which silently misses pre-fired events.
+    window.addEventListener( 'elementor/frontend/init', () => {
+        const widgetNames = [ 'wpfa-login', 'wpfa-register', 'wpfa-reset-password' ];
+        widgetNames.forEach( name => {
+            window.elementorFrontend.hooks.addAction(
+                `frontend/element_ready/${ name }.default`,
+                ( $scope ) => {
+                    if ( ! $scope || ! $scope[ 0 ] ) { return; }
+                    bindPasswordToggle( $scope[ 0 ] );
+                    bindPasswordStrength( $scope[ 0 ] );
+                }
+            );
+        } );
+    } );
 
 } )();

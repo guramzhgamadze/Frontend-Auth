@@ -51,6 +51,8 @@ class WPFA_Form {
 
     public function get_action_url(): string { return $this->action_url; }
 
+    public function set_action_url( string $url ): void { $this->action_url = $url; }
+
     public function set_show_links( bool $v ): void { $this->show_links = $v; }
 
     /* -----------------------------------------------------------------------
@@ -111,6 +113,16 @@ class WPFA_Form {
     public function set_field_value( string $name, $value ): void {
         if ( isset( $this->fields[ $name ] ) ) {
             $this->fields[ $name ]['value'] = $value;
+        }
+    }
+
+    /**
+     * Override any field property (label, value, description, etc.).
+     * Used by Elementor widgets to apply custom text from controls.
+     */
+    public function set_field_option( string $name, string $key, $value ): void {
+        if ( isset( $this->fields[ $name ] ) ) {
+            $this->fields[ $name ][ $key ] = $value;
         }
     }
 
@@ -281,10 +293,25 @@ class WPFA_Form {
         ], (array) $field['attrs'] );
 
         // BUG-8 fix: never pre-populate password fields with a value.
-        // Re-filling a password input from POST data is a security/UX anti-pattern
-        // and violates browser autocomplete expectations.
         if ( 'password' === $type ) {
             $attrs['value'] = '';
+        }
+
+        // Placeholder — set by Elementor widget control via set_field_option().
+        if ( ! empty( $field['placeholder'] ) ) {
+            $attrs['placeholder'] = $field['placeholder'];
+        }
+
+        // Password toggle i18n — injected as data attrs so JS can read per-field
+        // values instead of relying on the global wpFrontendAuth config object.
+        // This allows each widget instance to have its own show/hide label text.
+        if ( 'password' === $type ) {
+            if ( ! empty( $field['toggle_show'] ) ) {
+                $attrs['data-toggle-show'] = $field['toggle_show'];
+            }
+            if ( ! empty( $field['toggle_hide'] ) ) {
+                $attrs['data-toggle-hide'] = $field['toggle_hide'];
+            }
         }
 
         // For checkboxes, checked state is determined by comparing stored value.

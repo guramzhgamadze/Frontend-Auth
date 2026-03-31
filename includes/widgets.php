@@ -5,11 +5,10 @@
  * All frontend auth forms exposed as classic WP_Widget instances.
  *
  * Available widgets:
- *  - WPFA_Login_Widget          — login form (or dashboard greeting when logged in)
+ *  - WPFA_Login_Widget          — login form
  *  - WPFA_Register_Widget       — registration form
  *  - WPFA_Lost_Password_Widget  — lost-password form
  *  - WPFA_Reset_Password_Widget — password reset form (reads rp_key/rp_login from URL)
- *  - WPFA_Dashboard_Widget      — logged-in welcome panel with links
  *
  * Audit fixes applied:
  *  [F1]  render_title_field() hardcoded 'Login' fallback for every subclass.
@@ -41,7 +40,6 @@ function wpfa_register_widgets(): void {
     register_widget( new WPFA_Register_Widget() );
     register_widget( new WPFA_Lost_Password_Widget() );
     register_widget( new WPFA_Reset_Password_Widget() );
-    register_widget( new WPFA_Dashboard_Widget() );
 }
 
 /* -----------------------------------------------------------------------
@@ -59,59 +57,7 @@ function wpfa_render_form( string $form_name, array $render_args = [] ): string 
     return (string) apply_filters( 'wpfa_widget_form_output', $form->render( $render_args ), $form_name, $render_args );
 }
 
-/**
- * Render the logged-in dashboard panel, returning its HTML string.
- */
-function wpfa_render_dashboard(): string {
-    $user  = wp_get_current_user();
-    $links = (array) apply_filters( 'wpfa_dashboard_links', array_filter( [
-        'admin' => current_user_can( 'edit_posts' ) ? [
-            'title' => __( 'Site Admin', 'wp-frontend-auth' ),
-            'url'   => admin_url(),
-        ] : false,
-        'profile' => [
-            'title' => __( 'Edit Profile', 'wp-frontend-auth' ),
-            'url'   => admin_url( 'profile.php' ),
-        ],
-        'logout' => [
-            'title' => __( 'Log Out', 'wp-frontend-auth' ),
-            'url'   => wp_logout_url(),
-        ],
-    ] ) );
 
-    ob_start();
-    ?>
-    <div class="wpfa wpfa-dashboard">
-        <div class="wpfa-dashboard-avatar">
-            <?php
-            // [F5] get_avatar() returns a trusted HTML string — annotate for WPCS.
-            echo get_avatar( $user->ID, 64 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-            ?>
-        </div>
-        <p class="wpfa-dashboard-greeting">
-            <?php
-            printf(
-                /* translators: %s = display name */
-                esc_html__( 'Hello, %s!', 'wp-frontend-auth' ),
-                esc_html( $user->display_name )
-            );
-            ?>
-        </p>
-        <?php if ( ! empty( $links ) ) : ?>
-        <ul class="wpfa-dashboard-links">
-            <?php foreach ( $links as $link ) : ?>
-            <li>
-                <a href="<?php echo esc_url( $link['url'] ); ?>">
-                    <?php echo esc_html( $link['title'] ); ?>
-                </a>
-            </li>
-            <?php endforeach; ?>
-        </ul>
-        <?php endif; ?>
-    </div>
-    <?php
-    return (string) ob_get_clean();
-}
 
 /* -----------------------------------------------------------------------
  * Abstract base widget
@@ -310,16 +256,12 @@ class WPFA_Login_Widget extends WPFA_Abstract_Widget {
     protected function get_instance_defaults(): array {
         return array_merge( parent::get_instance_defaults(), [
             'title'          => __( 'Login', 'wp-frontend-auth' ),
-            'show_dashboard' => 1,
         ] );
     }
 
     protected function render_content( array $instance ): void {
         if ( is_user_logged_in() ) {
-            if ( (bool) ( $instance['show_dashboard'] ?? true ) ) {
-                echo wpfa_render_dashboard(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-            }
-            return;
+            return; // Logged-in state handled by external dashboard plugins.
         }
         echo wpfa_render_form( 'login', $this->build_render_args( $instance ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
     }
@@ -330,21 +272,11 @@ class WPFA_Login_Widget extends WPFA_Abstract_Widget {
         $this->render_redirect_field( $instance );
         $this->render_show_links_field( $instance );
         ?>
-        <p>
-            <label>
-                <input type="checkbox"
-                       name="<?php echo esc_attr( $this->get_field_name( 'show_dashboard' ) ); ?>"
-                       value="1"
-                       <?php checked( (bool) ( $instance['show_dashboard'] ?? true ) ); ?>>
-                <?php esc_html_e( 'Show dashboard panel when logged in', 'wp-frontend-auth' ); ?>
-            </label>
-        </p>
         <?php
     }
 
     public function update( $new_instance, $old_instance ): array {
         $sanitized                   = $this->sanitize_instance( $new_instance );
-        $sanitized['show_dashboard'] = ! empty( $new_instance['show_dashboard'] ) ? 1 : 0;
         return $sanitized;
     }
 }
@@ -451,67 +383,6 @@ class WPFA_Lost_Password_Widget extends WPFA_Abstract_Widget {
         $instance = $this->parse_instance( $instance );
         $this->render_title_field( $instance, __( 'Reset Password', 'wp-frontend-auth' ) ); // [F1]
         $this->render_show_links_field( $instance );
-    }
-}
-
-/* -----------------------------------------------------------------------
- * 4. Dashboard Widget
- * -------------------------------------------------------------------- */
-
-class WPFA_Dashboard_Widget extends WPFA_Abstract_Widget {
-
-    protected string $form_name = 'dashboard';
-
-    public function __construct() {
-        $this->init_widget(
-            'wpfa_dashboard_widget',
-            __( 'WP Frontend Auth: Dashboard', 'wp-frontend-auth' ),
-            [
-                'description' => __( 'Shows a welcome panel with links when logged in. Optionally shows a login form when logged out.', 'wp-frontend-auth' ),
-                'classname'   => 'widget_wpfa widget_wpfa_dashboard',
-            ]
-        );
-    }
-
-    protected function get_instance_defaults(): array {
-        return array_merge( parent::get_instance_defaults(), [
-            'title'                      => __( 'My Account', 'wp-frontend-auth' ),
-            'show_login_when_logged_out' => 1,
-        ] );
-    }
-
-    protected function render_content( array $instance ): void {
-        if ( is_user_logged_in() ) {
-            echo wpfa_render_dashboard(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-            return;
-        }
-        if ( (bool) ( $instance['show_login_when_logged_out'] ?? true ) ) {
-            echo wpfa_render_form( 'login', $this->build_render_args( $instance ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-        }
-    }
-
-    public function form( $instance ): void {
-        $instance = $this->parse_instance( $instance );
-        $this->render_title_field( $instance, __( 'My Account', 'wp-frontend-auth' ) ); // [F1]
-        $this->render_redirect_field( $instance );
-        $this->render_show_links_field( $instance );
-        ?>
-        <p>
-            <label>
-                <input type="checkbox"
-                       name="<?php echo esc_attr( $this->get_field_name( 'show_login_when_logged_out' ) ); ?>"
-                       value="1"
-                       <?php checked( (bool) ( $instance['show_login_when_logged_out'] ?? true ) ); ?>>
-                <?php esc_html_e( 'Show login form when user is logged out', 'wp-frontend-auth' ); ?>
-            </label>
-        </p>
-        <?php
-    }
-
-    public function update( $new_instance, $old_instance ): array {
-        $sanitized                               = $this->sanitize_instance( $new_instance );
-        $sanitized['show_login_when_logged_out'] = ! empty( $new_instance['show_login_when_logged_out'] ) ? 1 : 0;
-        return $sanitized;
     }
 }
 

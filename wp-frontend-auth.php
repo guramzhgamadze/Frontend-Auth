@@ -1,25 +1,73 @@
 <?php
 /**
  * Plugin Name:       WP Frontend Auth
- * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.2.0
- * Requires at least: 6.9
- * Requires PHP:      8.1
  * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
+ * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
+ * Version:           1.4.8
+ * Requires at least: 6.2
+ * Requires PHP:      8.0
  * Author:            Guram Zhgamadze
+ * Author URI:        https://github.com/guramzhgamadze
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       wp-frontend-auth
  * Domain Path:       /languages
  * Network:           true
  */
-// NOTE: No "Requires Plugins: elementor" header — this plugin works without Elementor
-// for classic WP_Widget sidebar use. Elementor widgets are loaded conditionally only
-// when Elementor is active. See the did_action('elementor/loaded') guard in hooks.php.
+
+// No "Requires Plugins: elementor" header — this plugin works without Elementor
+// for classic WP_Widget sidebar use. Elementor widgets are loaded conditionally
+// only when Elementor is active.
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WPFA_VERSION', '1.2.0' );
+/* -----------------------------------------------------------------------
+ * Prevent fatal error if two copies of this plugin exist in /plugins/.
+ * If another copy already defined WPFA_VERSION, bail silently.
+ * -------------------------------------------------------------------- */
+if ( defined( 'WPFA_VERSION' ) ) {
+    return;
+}
+
+/* -----------------------------------------------------------------------
+ * Runtime PHP version guard
+ *
+ * The header "Requires PHP: 8.0" tells WordPress to block activation on
+ * older versions, but some hosts bypass this check (e.g. WP-CLI, mu-plugins
+ * that pre-load, or outdated WP installs that ignore the header). This
+ * guard catches those edge cases with a graceful admin notice instead of
+ * a fatal parse error from str_contains() / union types / typed properties.
+ * -------------------------------------------------------------------- */
+if ( version_compare( PHP_VERSION, '8.0.0', '<' ) ) {
+    add_action( 'admin_notices', static function (): void {
+        echo '<div class="notice notice-error"><p>';
+        echo '<strong>WP Frontend Auth</strong> requires PHP 8.0 or higher. ';
+        printf(
+            'Your server is running PHP %s. Please upgrade PHP or deactivate the plugin.',
+            esc_html( PHP_VERSION )
+        );
+        echo '</p></div>';
+    } );
+    return; // Stop loading — nothing below is PHP 7.x safe.
+}
+
+/* -----------------------------------------------------------------------
+ * WordPress version guard (runtime)
+ *
+ * wp_send_new_user_notification_to_user filter requires WP 6.1+.
+ * sanitize_url() canonical since WP 5.9. We target 6.2+ minimum.
+ * -------------------------------------------------------------------- */
+if ( version_compare( get_bloginfo( 'version' ), '6.2', '<' ) ) {
+    add_action( 'admin_notices', static function (): void {
+        echo '<div class="notice notice-error"><p>';
+        echo '<strong>WP Frontend Auth</strong> requires WordPress 6.2 or higher. ';
+        echo 'Please update WordPress or deactivate the plugin.';
+        echo '</p></div>';
+    } );
+    return;
+}
+
+define( 'WPFA_VERSION', '1.4.5' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -58,16 +106,95 @@ if ( is_admin() ) {
 }
 
 /* -----------------------------------------------------------------------
- * Elementor widgets — loaded only when Elementor is active.
- * Guarded by did_action() so it works on both plugins_loaded and later.
+ * Upgrade routine — runs on init, flushes rewrite rules when stored
+ * version != current version.
+ *
+ * Critical because replacing plugin files via FTP/zip does NOT trigger
+ * the activation hook — rewrite rules must be flushed on version change.
  * -------------------------------------------------------------------- */
-add_action( 'elementor/widgets/register', 'wpfa_load_elementor_widgets' );
-function wpfa_load_elementor_widgets( \Elementor\Widgets_Manager $manager ): void {
+add_action( 'init', 'wpfa_maybe_upgrade', 2 );
+
+function wpfa_maybe_upgrade(): void {
+    $stored = get_option( 'wpfa_version', '' );
+    if ( WPFA_VERSION === $stored ) {
+        return;
+    }
+
+    // Seed default options if missing (first install via FTP, not activation hook).
+    if ( '' === $stored ) {
+        $defaults = [
+            'wpfa_rate_limit'        => 10,
+            'wpfa_rate_limit_window' => 15,
+            'wpfa_use_ajax'          => false,
+            'wpfa_user_passwords'    => false,
+            'wpfa_auto_login'        => false,
+            'wpfa_honeypot'          => true,
+            'wpfa_login_type'        => 'default',
+            'wpfa_use_permalinks'    => true,
+        ];
+        foreach ( $defaults as $key => $val ) {
+            if ( null === get_option( $key, null ) ) {
+                add_option( $key, $val );
+            }
+        }
+    }
+
+    update_option( 'wpfa_version', WPFA_VERSION );
+
+    // Flush rewrite rules on shutdown (after all rules are registered).
+    add_action( 'shutdown', 'wpfa_flush_rewrite_rules' );
+}
+
+/* -----------------------------------------------------------------------
+ * Elementor integration — loaded only when Elementor is active.
+ *
+ * FIX: Removed \Elementor\* type hints from these callback signatures.
+ * While PHP resolves type hints lazily (no fatal at definition time),
+ * some opcache/preloading configurations and static analysis tools can
+ * trigger issues. The hooks are Elementor-specific — if they fire,
+ * Elementor is loaded. We validate with class_exists() inside instead.
+ *
+ * FIX: Added class_exists() guard before require_once to prevent fatal
+ * "Class Elementor\Widget_Base not found" if Elementor's autoloader
+ * hasn't registered the base class yet when the hook fires.
+ * -------------------------------------------------------------------- */
+
+// Register the custom widget category in the Elementor panel sidebar.
+add_action( 'elementor/elements/categories_registered', 'wpfa_maybe_register_elementor_category' );
+
+/**
+ * @param \Elementor\Elements_Manager $elements_manager (type hint omitted — see note above)
+ */
+function wpfa_maybe_register_elementor_category( $elements_manager ): void {
     if ( ! did_action( 'elementor/loaded' ) ) {
         return;
     }
+    if ( ! class_exists( '\Elementor\Widget_Base' ) ) {
+        return;
+    }
     require_once WPFA_PATH . 'includes/elementor/class-wpfa-elementor-widgets.php';
-    wpfa_register_elementor_widgets( $manager );
+    if ( function_exists( 'wpfa_register_elementor_category' ) ) {
+        wpfa_register_elementor_category( $elements_manager );
+    }
+}
+
+// Register the widgets themselves.
+add_action( 'elementor/widgets/register', 'wpfa_load_elementor_widgets' );
+
+/**
+ * @param \Elementor\Widgets_Manager $manager (type hint omitted — see note above)
+ */
+function wpfa_load_elementor_widgets( $manager ): void {
+    if ( ! did_action( 'elementor/loaded' ) ) {
+        return;
+    }
+    if ( ! class_exists( '\Elementor\Widget_Base' ) ) {
+        return;
+    }
+    require_once WPFA_PATH . 'includes/elementor/class-wpfa-elementor-widgets.php';
+    if ( function_exists( 'wpfa_register_elementor_widgets' ) ) {
+        wpfa_register_elementor_widgets( $manager );
+    }
 }
 
 /* -----------------------------------------------------------------------
@@ -77,7 +204,6 @@ register_activation_hook( __FILE__, 'wpfa_activate' );
 register_deactivation_hook( __FILE__, 'wpfa_deactivate' );
 
 function wpfa_activate(): void {
-    // BUG-HIGH-3 fix: use null check, not false check.
     // get_option() returns false for missing options AND for options stored as false.
     // null is never stored by add_option/update_option so === null is unambiguous.
     if ( null === get_option( 'wpfa_rate_limit', null ) ) {
@@ -93,7 +219,6 @@ function wpfa_activate(): void {
     update_option( 'wpfa_version', WPFA_VERSION );
 
     // Create real WP pages on activation so Elementor can target them.
-    // See options.php: wpfa_create_action_pages()
     wpfa_create_action_pages();
     wpfa_flush_rewrite_rules();
 }

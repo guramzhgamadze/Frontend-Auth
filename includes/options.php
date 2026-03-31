@@ -63,7 +63,6 @@ function wpfa_get_action_slug_default( string $action ): string {
         'register'     => 'register',
         'lostpassword' => 'lost-password',
         'resetpass'    => 'reset-password',
-        'dashboard'    => 'dashboard',
     ];
     return $defaults[ $action ] ?? $action;
 }
@@ -82,6 +81,44 @@ function wpfa_get_action_slug_default( string $action ): string {
  * If the user already has pages with the matching slugs (e.g. pre-existing Elementor
  * pages), those are detected and stored instead of creating duplicates.
  * -------------------------------------------------------------------- */
+
+/**
+ * Return a valid author user ID for auto-created pages.
+ *
+ * BUG FIX (v1.4.5) — Hardcoded post_author => 1:
+ *
+ * The previous code used 'post_author' => 1 unconditionally. On many sites
+ * — multisite sub-sites, headless installs, or sites where the first admin
+ * was deleted and recreated — user ID 1 does not exist. WordPress silently
+ * stores the invalid ID, which can break capability checks and author archives.
+ *
+ * Fix: prefer the currently logged-in user (during activation), then fall back
+ * to the first administrator user found in the database.
+ *
+ * Source: developer.wordpress.org/reference/functions/get_users/
+ *         developer.wordpress.org/reference/functions/get_current_user_id/
+ *
+ * @return int  A valid existing user ID, or 0 if no users exist (edge case).
+ */
+function wpfa_get_page_author_id(): int {
+    // During manual activation the site admin is logged in — use their ID.
+    $current = (int) get_current_user_id();
+    if ( $current > 0 && user_can( $current, 'manage_options' ) ) {
+        return $current;
+    }
+
+    // During automatic activation (e.g. WP-CLI, auto-update) no one is logged in.
+    // Fall back to the first administrator account found.
+    $admins = get_users( [
+        'role'    => 'administrator',
+        'number'  => 1,
+        'orderby' => 'ID',
+        'order'   => 'ASC',
+        'fields'  => 'ID',
+    ] );
+
+    return ! empty( $admins ) ? (int) $admins[0] : 0;
+}
 
 /**
  * Actions that need a real page (excludes logout and dashboard which don't have forms).
@@ -104,12 +141,25 @@ function wpfa_get_page_actions(): array {
 function wpfa_create_action_pages(): void {
     foreach ( wpfa_get_page_actions() as $action => $title ) {
         $opt  = "wpfa_page_id_{$action}";
-        $slug = wpfa_get_action_slug_default( $action );
+        // Use the user's configured slug (from settings), falling back to default.
+        $slug = function_exists( 'wpfa_get_action_slug' )
+            ? wpfa_get_action_slug( $action )
+            : wpfa_get_action_slug_default( $action );
 
-        // Check if we already have a stored page ID that still exists.
+        // Check if we already have a stored page ID that still exists and is published.
         $stored_id = (int) get_option( $opt, 0 );
-        if ( $stored_id && get_post( $stored_id ) instanceof WP_Post ) {
-            continue;
+        if ( $stored_id ) {
+            $stored_post = get_post( $stored_id );
+            if ( $stored_post instanceof WP_Post && 'publish' === $stored_post->post_status ) {
+                continue;
+            }
+            // Page exists but is trashed/draft — republish it.
+            if ( $stored_post instanceof WP_Post ) {
+                wp_update_post( [ 'ID' => $stored_id, 'post_status' => 'publish' ] );
+                continue;
+            }
+            // Page no longer exists — clear the stale option so we recreate below.
+            delete_option( $opt );
         }
 
         // Check if a page with this slug already exists (user may have created one).
@@ -126,7 +176,7 @@ function wpfa_create_action_pages(): void {
             'post_status'  => 'publish',
             'post_type'    => 'page',
             'post_content' => '',
-            'post_author'  => 1,
+            'post_author'  => wpfa_get_page_author_id(),
         ], true );
 
         if ( $page_id instanceof WP_Error ) {

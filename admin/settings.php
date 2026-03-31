@@ -2,8 +2,7 @@
 /**
  * WP Frontend Auth – Admin Settings
  *
- * FIX: Added 'wpfa_use_permalinks' setting which was read but never
- * registered or rendered, making it impossible to toggle from the UI.
+ * Modern admin panel with card-based layout.
  *
  * @package WP_Frontend_Auth
  */
@@ -11,121 +10,51 @@
 defined( 'ABSPATH' ) || exit;
 
 /* -----------------------------------------------------------------------
- * Menu registration
+ * Menu registration — top-level sidebar item
  * -------------------------------------------------------------------- */
 add_action( 'admin_menu', 'wpfa_admin_add_menu' );
 
 function wpfa_admin_add_menu(): void {
     add_menu_page(
-        __( 'WP Frontend Auth', 'wp-frontend-auth' ),
+        __( 'Frontend Auth', 'wp-frontend-auth' ),
         __( 'Frontend Auth', 'wp-frontend-auth' ),
         'manage_options',
         'wp-frontend-auth',
         'wpfa_admin_settings_page',
         'dashicons-lock',
-        80
+        71
     );
 }
 
 /* -----------------------------------------------------------------------
- * Register settings
+ * Register settings (WP Settings API — handles nonce + sanitization)
  * -------------------------------------------------------------------- */
 add_action( 'admin_init', 'wpfa_admin_register_settings' );
 
 function wpfa_admin_register_settings(): void {
-
-    // ----- General section
-    add_settings_section(
-        'wpfa_general',
-        __( 'General', 'wp-frontend-auth' ),
-        '__return_null',
-        'wp-frontend-auth'
-    );
-
-    $general_fields = [
-        'wpfa_login_type' => [
-            'title'    => __( 'Login with', 'wp-frontend-auth' ),
-            'callback' => 'wpfa_admin_field_login_type',
-            'sanitize' => 'wpfa_sanitize_login_type',
-        ],
-        'wpfa_use_permalinks' => [
-            'title'    => __( 'Use pretty URLs', 'wp-frontend-auth' ),
-            'callback' => 'wpfa_admin_field_use_permalinks',
-            'sanitize' => 'absint',
-        ],
-        'wpfa_use_ajax' => [
-            'title'    => __( 'AJAX forms', 'wp-frontend-auth' ),
-            'callback' => 'wpfa_admin_field_use_ajax',
-            'sanitize' => 'absint',
-        ],
-        'wpfa_user_passwords' => [
-            'title'    => __( 'Allow users to set own password', 'wp-frontend-auth' ),
-            'callback' => 'wpfa_admin_field_user_passwords',
-            'sanitize' => 'absint',
-        ],
-        'wpfa_auto_login' => [
-            'title'    => __( 'Auto-login after registration', 'wp-frontend-auth' ),
-            'callback' => 'wpfa_admin_field_auto_login',
-            'sanitize' => 'absint',
-        ],
-        'wpfa_honeypot' => [
-            'title'    => __( 'Honeypot spam protection', 'wp-frontend-auth' ),
-            'callback' => 'wpfa_admin_field_honeypot',
-            'sanitize' => 'absint',
-        ],
+    // General
+    $general = [
+        'wpfa_login_type'      => 'wpfa_sanitize_login_type',
+        'wpfa_use_permalinks'  => 'absint',
+        'wpfa_use_ajax'        => 'absint',
+        'wpfa_user_passwords'  => 'absint',
+        'wpfa_auto_login'      => 'absint',
+        'wpfa_honeypot'        => 'absint',
     ];
-
-    foreach ( $general_fields as $id => $field ) {
-        add_settings_field( $id, $field['title'], $field['callback'], 'wp-frontend-auth', 'wpfa_general' );
-        register_setting( 'wp-frontend-auth', $id, [ 'sanitize_callback' => $field['sanitize'] ] );
+    foreach ( $general as $id => $sanitize ) {
+        register_setting( 'wp-frontend-auth', $id, [ 'sanitize_callback' => $sanitize ] );
     }
 
-    // ----- Rate limiting section
-    add_settings_section(
-        'wpfa_rate_limiting',
-        __( 'Rate Limiting', 'wp-frontend-auth' ),
-        function () {
-            echo '<p>' . esc_html__( 'Limit the number of failed attempts per IP address before a temporary lockout.', 'wp-frontend-auth' ) . '</p>';
-        },
-        'wp-frontend-auth'
-    );
-
-    add_settings_field( 'wpfa_rate_limit', __( 'Max attempts', 'wp-frontend-auth' ), 'wpfa_admin_field_rate_limit', 'wp-frontend-auth', 'wpfa_rate_limiting' );
-    register_setting( 'wp-frontend-auth', 'wpfa_rate_limit', [ 'sanitize_callback' => 'absint' ] );
-
-    add_settings_field( 'wpfa_rate_limit_window', __( 'Lockout window (minutes)', 'wp-frontend-auth' ), 'wpfa_admin_field_rate_limit_window', 'wp-frontend-auth', 'wpfa_rate_limiting' );
+    // Rate limiting
+    register_setting( 'wp-frontend-auth', 'wpfa_rate_limit',        [ 'sanitize_callback' => 'absint' ] );
     register_setting( 'wp-frontend-auth', 'wpfa_rate_limit_window', [ 'sanitize_callback' => 'absint' ] );
 
-    // ----- URL slugs section
-    add_settings_section(
-        'wpfa_slugs',
-        __( 'Page Slugs', 'wp-frontend-auth' ),
-        function () {
-            echo '<p>' . esc_html__( 'Customise the URL slug for each action page. Changes require saving the permalink structure (Settings → Permalinks → Save).', 'wp-frontend-auth' ) . '</p>';
-        },
-        'wp-frontend-auth'
-    );
-
-    $slug_actions = [ 'login', 'logout', 'register', 'lostpassword', 'resetpass', 'dashboard' ];
+    // Slugs
+    $slug_actions = [ 'login', 'logout', 'register', 'lostpassword', 'resetpass' ];
     foreach ( $slug_actions as $action ) {
-        $option = "wpfa_slug_{$action}";
-        add_settings_field(
-            $option,
-            sprintf( __( '%s slug', 'wp-frontend-auth' ), ucfirst( $action ) ),
-            function () use ( $option, $action ) {
-                $value = get_option( $option, wpfa_get_action_slug_default( $action ) );
-                echo '<input type="text" class="regular-text" name="' . esc_attr( $option ) . '" value="' . esc_attr( $value ) . '">';
-            },
-            'wp-frontend-auth',
-            'wpfa_slugs'
-        );
-        register_setting( 'wp-frontend-auth', $option, [ 'sanitize_callback' => 'sanitize_title' ] );
+        register_setting( 'wp-frontend-auth', "wpfa_slug_{$action}", [ 'sanitize_callback' => 'sanitize_title' ] );
     }
 }
-
-/* -----------------------------------------------------------------------
- * Sanitize callbacks
- * -------------------------------------------------------------------- */
 
 function wpfa_sanitize_login_type( $value ): string {
     $allowed = [ 'default', 'username', 'email' ];
@@ -134,72 +63,7 @@ function wpfa_sanitize_login_type( $value ): string {
 }
 
 /* -----------------------------------------------------------------------
- * Field callbacks
- * -------------------------------------------------------------------- */
-
-function wpfa_admin_field_login_type(): void {
-    $value   = get_option( 'wpfa_login_type', 'default' );
-    $options = [
-        'default'  => __( 'Username or Email', 'wp-frontend-auth' ),
-        'username' => __( 'Username only', 'wp-frontend-auth' ),
-        'email'    => __( 'Email only', 'wp-frontend-auth' ),
-    ];
-    echo '<select name="wpfa_login_type">';
-    foreach ( $options as $k => $label ) {
-        echo '<option value="' . esc_attr( $k ) . '" ' . selected( $value, $k, false ) . '>' . esc_html( $label ) . '</option>';
-    }
-    echo '</select>';
-}
-
-function wpfa_admin_field_use_permalinks(): void {
-    global $wp_rewrite;
-    $checked      = (bool) get_option( 'wpfa_use_permalinks', true );
-    $has_permalinks = $wp_rewrite instanceof WP_Rewrite && $wp_rewrite->using_permalinks();
-    echo '<label><input type="checkbox" name="wpfa_use_permalinks" value="1" ' . checked( $checked, true, false ) . '> '
-        . esc_html__( 'Use pretty URLs (e.g. /login/ instead of ?action=login)', 'wp-frontend-auth' ) . '</label>';
-    if ( ! $has_permalinks ) {
-        echo '<p class="description">' . esc_html__( 'WordPress permalinks are currently set to "Plain". Enable a permalink structure under Settings → Permalinks to use pretty URLs.', 'wp-frontend-auth' ) . '</p>';
-    }
-}
-
-function wpfa_admin_field_use_ajax(): void {
-    $checked = (bool) get_option( 'wpfa_use_ajax', false );
-    echo '<label><input type="checkbox" name="wpfa_use_ajax" value="1" ' . checked( $checked, true, false ) . '> '
-        . esc_html__( 'Submit forms without a page reload', 'wp-frontend-auth' ) . '</label>';
-}
-
-function wpfa_admin_field_user_passwords(): void {
-    $checked = (bool) get_option( 'wpfa_user_passwords', false );
-    echo '<label><input type="checkbox" name="wpfa_user_passwords" value="1" ' . checked( $checked, true, false ) . '> '
-        . esc_html__( 'Show a password field on the registration form', 'wp-frontend-auth' ) . '</label>';
-}
-
-function wpfa_admin_field_auto_login(): void {
-    $checked = (bool) get_option( 'wpfa_auto_login', false );
-    echo '<label><input type="checkbox" name="wpfa_auto_login" value="1" ' . checked( $checked, true, false ) . '> '
-        . esc_html__( 'Automatically log users in after they register', 'wp-frontend-auth' ) . '</label>';
-}
-
-function wpfa_admin_field_honeypot(): void {
-    $checked = (bool) get_option( 'wpfa_honeypot', true );
-    echo '<label><input type="checkbox" name="wpfa_honeypot" value="1" ' . checked( $checked, true, false ) . '> '
-        . esc_html__( 'Add a hidden honeypot field to forms to catch bots', 'wp-frontend-auth' ) . '</label>';
-}
-
-function wpfa_admin_field_rate_limit(): void {
-    $value = (int) get_option( 'wpfa_rate_limit', 10 );
-    echo '<input type="number" name="wpfa_rate_limit" value="' . esc_attr( $value ) . '" min="0" max="100" class="small-text">';
-    echo '<p class="description">' . esc_html__( 'Set to 0 to disable rate limiting.', 'wp-frontend-auth' ) . '</p>';
-}
-
-function wpfa_admin_field_rate_limit_window(): void {
-    $value = (int) get_option( 'wpfa_rate_limit_window', 15 );
-    echo '<input type="number" name="wpfa_rate_limit_window" value="' . esc_attr( $value ) . '" min="1" max="1440" class="small-text"> '
-        . esc_html__( 'minutes', 'wp-frontend-auth' );
-}
-
-/* -----------------------------------------------------------------------
- * Settings page HTML
+ * Settings page HTML — modern card-based design
  * -------------------------------------------------------------------- */
 
 function wpfa_admin_settings_page(): void {
@@ -207,15 +71,139 @@ function wpfa_admin_settings_page(): void {
         return;
     }
     ?>
-    <div class="wrap">
-        <h1><?php esc_html_e( 'WP Frontend Auth Settings', 'wp-frontend-auth' ); ?></h1>
-        <p><?php esc_html_e( 'After changing page slugs, visit Settings → Permalinks and click Save Changes to flush the rewrite rules.', 'wp-frontend-auth' ); ?></p>
+    <style>
+        .wpfa-admin { max-width: 780px; margin: 20px auto 40px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        .wpfa-admin-header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+        .wpfa-admin-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0; color: #1d2327; }
+        .wpfa-admin-header .wpfa-ver { font-size: 0.78rem; background: #f0f6fc; color: #2271b1; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+        .wpfa-card { background: #fff; border: 1px solid #e0e0e0; border-radius: 12px; padding: 28px 32px; margin-bottom: 20px; }
+        .wpfa-card h2 { margin: 0 0 4px; font-size: 1.05rem; font-weight: 700; color: #1d2327; }
+        .wpfa-card p.desc { margin: 0 0 20px; font-size: 0.88rem; color: #646970; }
+        .wpfa-row { display: flex; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+        .wpfa-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .wpfa-row:first-of-type { padding-top: 0; }
+        .wpfa-row-label { flex: 0 0 220px; font-size: 0.9rem; font-weight: 600; color: #1d2327; }
+        .wpfa-row-field { flex: 1; min-width: 0; }
+        .wpfa-row-field select, .wpfa-row-field input[type="text"], .wpfa-row-field input[type="number"] {
+            padding: 8px 12px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 0.9rem;
+            color: #1d2327; background: #fff; width: 100%; max-width: 320px; transition: border-color 0.15s;
+        }
+        .wpfa-row-field input:focus, .wpfa-row-field select:focus { border-color: #2271b1; outline: none; box-shadow: 0 0 0 1px #2271b1; }
+        .wpfa-row-field input[type="number"] { max-width: 100px; }
+        .wpfa-toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .wpfa-toggle input { opacity: 0; width: 0; height: 0; }
+        .wpfa-toggle-slider { position: absolute; inset: 0; background: #ccc; border-radius: 24px; cursor: pointer; transition: 0.2s; }
+        .wpfa-toggle-slider::before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: 0.2s; }
+        .wpfa-toggle input:checked + .wpfa-toggle-slider { background: #2271b1; }
+        .wpfa-toggle input:checked + .wpfa-toggle-slider::before { transform: translateX(20px); }
+        .wpfa-hint { font-size: 0.8rem; color: #888; margin-top: 4px; }
+        .wpfa-slug-grid { display: grid; grid-template-columns: 140px 1fr; gap: 10px 16px; align-items: center; }
+        .wpfa-slug-grid label { font-size: 0.88rem; font-weight: 600; color: #1d2327; text-transform: capitalize; }
+        .wpfa-slug-grid input { padding: 8px 12px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 0.9rem; width: 100%; }
+        .wpfa-slug-grid input:focus { border-color: #2271b1; outline: none; box-shadow: 0 0 0 1px #2271b1; }
+        .wpfa-save-row { padding-top: 8px; }
+        .wpfa-save-row .button-primary { padding: 8px 28px; font-size: 0.92rem; border-radius: 8px; }
+        @media (max-width: 782px) {
+            .wpfa-admin { margin: 10px; }
+            .wpfa-row { flex-direction: column; align-items: stretch; gap: 6px; }
+            .wpfa-row-label { flex: none; }
+            .wpfa-slug-grid { grid-template-columns: 1fr; }
+            .wpfa-card { padding: 20px; }
+        }
+    </style>
+
+    <div class="wpfa-admin">
+        <div class="wpfa-admin-header">
+            <span class="dashicons dashicons-lock" style="font-size:28px;color:#2271b1;"></span>
+            <h1><?php esc_html_e( 'Frontend Auth', 'wp-frontend-auth' ); ?></h1>
+            <span class="wpfa-ver">v<?php echo esc_html( WPFA_VERSION ); ?></span>
+        </div>
+
         <form method="post" action="options.php">
-            <?php
-            settings_fields( 'wp-frontend-auth' );
-            do_settings_sections( 'wp-frontend-auth' );
-            submit_button();
-            ?>
+            <?php settings_fields( 'wp-frontend-auth' ); ?>
+
+            <!-- General Settings -->
+            <div class="wpfa-card">
+                <h2><?php esc_html_e( 'General', 'wp-frontend-auth' ); ?></h2>
+                <p class="desc"><?php esc_html_e( 'Core authentication behavior.', 'wp-frontend-auth' ); ?></p>
+
+                <div class="wpfa-row">
+                    <div class="wpfa-row-label"><?php esc_html_e( 'Login with', 'wp-frontend-auth' ); ?></div>
+                    <div class="wpfa-row-field">
+                        <?php $lt = get_option( 'wpfa_login_type', 'default' ); ?>
+                        <select name="wpfa_login_type">
+                            <option value="default" <?php selected( $lt, 'default' ); ?>><?php esc_html_e( 'Username or Email', 'wp-frontend-auth' ); ?></option>
+                            <option value="username" <?php selected( $lt, 'username' ); ?>><?php esc_html_e( 'Username only', 'wp-frontend-auth' ); ?></option>
+                            <option value="email" <?php selected( $lt, 'email' ); ?>><?php esc_html_e( 'Email only', 'wp-frontend-auth' ); ?></option>
+                        </select>
+                    </div>
+                </div>
+
+                <?php
+                $toggles = [
+                    [ 'wpfa_use_permalinks', __( 'Pretty URLs', 'wp-frontend-auth' ), __( 'Use /login/ instead of ?action=login', 'wp-frontend-auth' ), true ],
+                    [ 'wpfa_use_ajax', __( 'AJAX forms', 'wp-frontend-auth' ), __( 'Submit forms without a page reload', 'wp-frontend-auth' ), false ],
+                    [ 'wpfa_user_passwords', __( 'User-chosen passwords', 'wp-frontend-auth' ), __( 'Show password field on registration', 'wp-frontend-auth' ), false ],
+                    [ 'wpfa_auto_login', __( 'Auto-login', 'wp-frontend-auth' ), __( 'Log users in automatically after registration', 'wp-frontend-auth' ), false ],
+                    [ 'wpfa_honeypot', __( 'Honeypot protection', 'wp-frontend-auth' ), __( 'Hidden field to catch spam bots', 'wp-frontend-auth' ), true ],
+                ];
+                foreach ( $toggles as [ $opt, $label, $hint, $default ] ) :
+                    $checked = (bool) get_option( $opt, $default );
+                ?>
+                <div class="wpfa-row">
+                    <div class="wpfa-row-label"><?php echo esc_html( $label ); ?></div>
+                    <div class="wpfa-row-field">
+                        <label class="wpfa-toggle">
+                            <input type="checkbox" name="<?php echo esc_attr( $opt ); ?>" value="1" <?php checked( $checked ); ?>>
+                            <span class="wpfa-toggle-slider"></span>
+                        </label>
+                        <div class="wpfa-hint"><?php echo esc_html( $hint ); ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+
+            <!-- Rate Limiting -->
+            <div class="wpfa-card">
+                <h2><?php esc_html_e( 'Rate Limiting', 'wp-frontend-auth' ); ?></h2>
+                <p class="desc"><?php esc_html_e( 'Limit failed attempts per IP address before a temporary lockout.', 'wp-frontend-auth' ); ?></p>
+
+                <div class="wpfa-row">
+                    <div class="wpfa-row-label"><?php esc_html_e( 'Max attempts', 'wp-frontend-auth' ); ?></div>
+                    <div class="wpfa-row-field">
+                        <input type="number" name="wpfa_rate_limit" value="<?php echo esc_attr( (string) get_option( 'wpfa_rate_limit', 10 ) ); ?>" min="0" max="100">
+                        <div class="wpfa-hint"><?php esc_html_e( 'Set to 0 to disable.', 'wp-frontend-auth' ); ?></div>
+                    </div>
+                </div>
+                <div class="wpfa-row">
+                    <div class="wpfa-row-label"><?php esc_html_e( 'Lockout window', 'wp-frontend-auth' ); ?></div>
+                    <div class="wpfa-row-field">
+                        <input type="number" name="wpfa_rate_limit_window" value="<?php echo esc_attr( (string) get_option( 'wpfa_rate_limit_window', 15 ) ); ?>" min="1" max="1440"> <?php esc_html_e( 'minutes', 'wp-frontend-auth' ); ?>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Page Slugs -->
+            <div class="wpfa-card">
+                <h2><?php esc_html_e( 'Page Slugs', 'wp-frontend-auth' ); ?></h2>
+                <p class="desc"><?php esc_html_e( 'Customise the URL slug for each action page.', 'wp-frontend-auth' ); ?></p>
+
+                <div class="wpfa-slug-grid">
+                    <?php
+                    $slug_actions = [ 'login', 'logout', 'register', 'lostpassword', 'resetpass' ];
+                    foreach ( $slug_actions as $action ) :
+                        $option = "wpfa_slug_{$action}";
+                        $value  = get_option( $option, wpfa_get_action_slug_default( $action ) );
+                    ?>
+                    <label for="<?php echo esc_attr( $option ); ?>"><?php echo esc_html( ucfirst( str_replace( 'pass', ' pass', $action ) ) ); ?></label>
+                    <input type="text" id="<?php echo esc_attr( $option ); ?>" name="<?php echo esc_attr( $option ); ?>" value="<?php echo esc_attr( $value ); ?>">
+                    <?php endforeach; ?>
+                </div>
+            </div>
+
+            <div class="wpfa-save-row">
+                <?php submit_button( __( 'Save Changes', 'wp-frontend-auth' ), 'primary', 'submit', false ); ?>
+            </div>
         </form>
     </div>
     <?php

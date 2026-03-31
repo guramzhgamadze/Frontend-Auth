@@ -93,13 +93,6 @@ function wpfa_register_default_actions(): void {
         'show_in_widget'    => false,
         'show_in_nav_menus' => false,
     ] );
-
-    wpfa()->register_action( 'dashboard', [
-        'title'              => __( 'Dashboard', 'wp-frontend-auth' ),
-        'slug'               => wpfa_get_action_slug( 'dashboard' ),
-        'show_on_forms'      => false,
-        'show_nav_menu_item' => is_user_logged_in(),
-    ] );
 }
 
 /* -----------------------------------------------------------------------
@@ -129,7 +122,7 @@ function wpfa_handle_login(): void {
     $credentials = [
         'user_login'    => sanitize_user( wpfa_get_request_value( 'log', 'post' ) ),
         'user_password' => wpfa_get_request_value( 'pwd', 'post' ),
-        'remember'      => ! empty( $_POST['rememberme'] ), // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- boolean presence check, no sanitization needed; nonce verified in wpfa_route_post_request()
+        'remember'      => ! empty( $_POST['rememberme'] ), // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
     ];
 
     $user = wp_signon( $credentials, is_ssl() );
@@ -209,7 +202,6 @@ function wpfa_handle_register(): void {
         exit;
     }
 
-    // Honeypot — silently fake success for bots.
     if ( wpfa_honeypot_is_spam() ) {
         if ( $is_ajax ) {
             wpfa_send_ajax_success( [
@@ -232,8 +224,8 @@ function wpfa_handle_register(): void {
         return;
     }
 
-    $user_login = sanitize_user( wpfa_get_request_value( 'user_login', 'post' ) );
-    $user_email = sanitize_email( wpfa_get_request_value( 'user_email', 'post' ) );
+    $user_login   = sanitize_user( wpfa_get_request_value( 'user_login', 'post' ) );
+    $user_email   = sanitize_email( wpfa_get_request_value( 'user_email', 'post' ) );
     $registration = register_new_user( $user_login, $user_email );
 
     if ( is_wp_error( $registration ) ) {
@@ -258,29 +250,14 @@ function wpfa_handle_register(): void {
 
     $new_user_id = (int) $registration;
 
-    // Optional user-chosen password.
-    // Password validation (empty check, mismatch, min-length) is handled entirely
-    // by wpfa_validate_registration_password() hooked on 'registration_errors',
-    // which fires INSIDE register_new_user() BEFORE any user row is created.
-    // If validation failed, register_new_user() returned WP_Error above and we
-    // already returned. Reaching here guarantees passwords are valid — set directly.
     if ( wpfa_allow_user_passwords() ) {
         $pass1 = wpfa_get_request_value( 'user_pass1', 'post' );
-
         wp_set_password( $pass1, $new_user_id );
         update_user_option( $new_user_id, 'default_password_nag', false, true );
-
-        // FIX: When user sets their own password, suppress the default WP
-        // "check your email to set a password" notification (it would be wrong).
-        // Send a simple welcome email instead via wpfa_send_new_user_notifications().
         wpfa_send_new_user_notifications( $new_user_id, 'admin' );
     }
 
     wpfa_rate_limit_clear( 'register' );
-
-    // MEDIUM FIX: Fire registration_success ONCE before the auto-login branch.
-    // Previously the action was fired inside the auto-login block AND again below it,
-    // causing listeners (analytics, CRM, welcome emails) to execute twice.
     do_action( 'wpfa_registration_success', $new_user_id );
 
     if ( wpfa_allow_auto_login() ) {
@@ -325,7 +302,7 @@ function wpfa_handle_lostpassword(): void {
     }
 
     $result = retrieve_password(
-        sanitize_text_field( wp_unslash( $_POST['user_login'] ?? '' ) )
+        sanitize_text_field( wpfa_get_request_value( 'user_login', 'post' ) )
     );
 
     if ( is_wp_error( $result ) ) {
@@ -446,16 +423,10 @@ function wpfa_validate_registration_password( WP_Error $errors, $sanitized_user_
 
 /* -----------------------------------------------------------------------
  * Enforce login type (email-only or username-only)
- *
- * HIGH FIX: The old code only handled email-only mode AND only when $user === null.
- * Username-only mode was completely unenforced — users could still log in with email.
- * Also: checking for null is fragile because a prior handler may pass false or WP_Error.
- * Fix: pass through real WP_User or existing WP_Error; only enforce on null/false.
  * -------------------------------------------------------------------- */
 add_filter( 'authenticate', 'wpfa_enforce_login_type', 20, 3 );
 
 function wpfa_enforce_login_type( $user, $username, $password ) {
-    // Pass through successful authentications and existing errors — don't override them.
     if ( $user instanceof WP_User || is_wp_error( $user ) ) {
         return $user;
     }
@@ -475,21 +446,9 @@ function wpfa_enforce_login_type( $user, $username, $password ) {
 }
 
 /* -----------------------------------------------------------------------
- * New user notification helper
- *
- * FIX: When user-chosen passwords are enabled, register_new_user() sends
- * the default WP "check your email to set a password" email which is
- * completely wrong — the user already set their password. We suppress
- * the user-facing notification and send only the admin notification.
- * This function can also be called directly by third-party code.
+ * New user notification helpers
  * -------------------------------------------------------------------- */
 
-/**
- * Send new user notifications with control over who receives them.
- *
- * @param int    $user_id  New user ID.
- * @param string $notify   'both' | 'user' | 'admin' | 'none'
- */
 function wpfa_send_new_user_notifications( int $user_id, string $notify = 'both' ): void {
     $notify = apply_filters( 'wpfa_new_user_notification', $notify, $user_id );
     if ( 'none' === $notify ) {
@@ -498,17 +457,9 @@ function wpfa_send_new_user_notifications( int $user_id, string $notify = 'both'
     wp_new_user_notification( $user_id, null, $notify );
 }
 
-/**
- * Intercept the default new-user notification when user-chosen passwords
- * are enabled. The standard email tells users to click to set a password —
- * but they already set one. Suppress the user email; keep admin email.
- */
-add_filter( 'wp_send_new_user_notifications', 'wpfa_maybe_suppress_user_notification', 10, 2 );
+add_filter( 'wp_send_new_user_notification_to_user', 'wpfa_maybe_suppress_user_notification', 10, 2 );
 
 function wpfa_maybe_suppress_user_notification( bool $send, WP_User $user ): bool {
-    // 'wp_send_new_user_notifications' filter signature (WP 6.4+):
-    // ( bool $send, WP_User $user ) — second param is WP_User, not int.
-    // Only intercept during a WPFA registration POST when user passwords are on.
     if ( ! wpfa_is_post_request() ) {
         return $send;
     }
@@ -517,7 +468,48 @@ function wpfa_maybe_suppress_user_notification( bool $send, WP_User $user ): boo
         return $send;
     }
     if ( wpfa_allow_user_passwords() ) {
-        // We already called wpfa_send_new_user_notifications() with 'admin' above.
+        return false;
+    }
+    return $send;
+}
+
+/**
+ * Suppress the ADMIN notification fired internally by register_new_user() when
+ * user-chosen passwords are enabled.
+ *
+ * BUG FIX (v1.4.5) — Double admin email on registration with user passwords:
+ *
+ * When wpfa_allow_user_passwords() is true the flow is:
+ *   1. register_new_user() runs and internally calls wp_new_user_notification(),
+ *      which fires both the user and admin notification emails. The existing
+ *      wpfa_maybe_suppress_user_notification filter (above) correctly blocks
+ *      the user email at step 1. But the admin email still fires here.
+ *   2. wpfa_send_new_user_notifications($id, 'admin') is then called explicitly,
+ *      sending a SECOND admin notification with the correct context.
+ *
+ * Result: admin receives two identical "New User Registration" emails.
+ *
+ * Fix: also block the admin email triggered inside register_new_user() when
+ * user-chosen passwords are enabled. wpfa_send_new_user_notifications() later
+ * sends the one correct admin notification.
+ *
+ * wp_send_new_user_notification_to_admin was introduced in WP 4.6.
+ * Source: developer.wordpress.org/reference/hooks/wp_send_new_user_notification_to_admin/
+ */
+add_filter( 'wp_send_new_user_notification_to_admin', 'wpfa_maybe_suppress_admin_notification', 10, 2 );
+
+function wpfa_maybe_suppress_admin_notification( bool $send, WP_User $user ): bool {
+    if ( ! wpfa_is_post_request() ) {
+        return $send;
+    }
+    $action = sanitize_key( wpfa_get_request_value( 'wpfa_action', 'post' ) );
+    if ( 'register' !== $action ) {
+        return $send;
+    }
+    // Only suppress the internal notification from register_new_user() when
+    // user passwords are enabled — wpfa_send_new_user_notifications() will
+    // send the one correct admin email after wp_set_password() completes.
+    if ( wpfa_allow_user_passwords() ) {
         return false;
     }
     return $send;
