@@ -300,11 +300,90 @@ function wpfa_no_comments( array $comments ): array {
 }
 
 /* -----------------------------------------------------------------------
+ * URL filters — exemption registry
+ *
+ * Third-party plugins that use wp_login_url() as part of an OAuth or
+ * other authentication flow (e.g. WordPress MCP Bridge) need the native
+ * /wp-login.php URL, not the WPFA frontend /log-in/ page, because they
+ * control the redirect_to value themselves and expect WordPress core's
+ * login handler to be at the other end.
+ *
+ * Usage — from another plugin:
+ *
+ *   // Tell WPFA not to intercept login_url() in this REST request context.
+ *   add_filter( 'wpfa_login_url_exempt', '__return_true' );
+ *   $login = wp_login_url( $return );
+ *   remove_filter( 'wpfa_login_url_exempt', '__return_true' );
+ *
+ * Or permanently opt out of WPFA's login_url rewriting for a specific
+ * callback by inspecting the $redirect parameter inside a higher-priority
+ * filter on 'wpfa_login_url_exempt'.
+ *
+ * The filter also fires automatically when the current request is a
+ * non-Elementor REST API call that includes an OAuth redirect_uri
+ * parameter, because that signature unambiguously identifies an OAuth
+ * authorization-server flow that needs the native WP login page.
+ * -------------------------------------------------------------------- */
+
+/**
+ * Return true when WPFA's login_url filter should stand aside.
+ *
+ * Checks in order:
+ *  1. 'wpfa_login_url_exempt' filter — other plugins can hook here.
+ *  2. REST_REQUEST in a non-Elementor, non-WPFA REST context that
+ *     carries an OAuth redirect_uri parameter (MCP bridge, WP OAuth
+ *     Server, etc.).
+ *  3. The redirect parameter itself already contains a REST API URL for
+ *     this site (e.g. /wp-json/mcp/v1/oauth/authorize?...) — WPFA's
+ *     page would not know how to handle it.
+ *
+ * @param string $redirect  The redirect_to value passed to wp_login_url().
+ */
+function wpfa_is_login_url_exempt( string $redirect ): bool {
+    // 1. Explicit opt-out from another plugin.
+    if ( apply_filters( 'wpfa_login_url_exempt', false, $redirect ) ) {
+        return true;
+    }
+
+    // 2. Inside a REST request that is NOT Elementor and NOT WPFA itself.
+    //    An OAuth authorization server (MCP bridge, WP OAuth Server, etc.)
+    //    calls wp_login_url() with the authorize endpoint as the return URL.
+    //    The WPFA frontend login page has no knowledge of OAuth and would
+    //    silently lose the OAuth parameters on form submission.
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        $route = $GLOBALS['wp']->query_vars['rest_route'] ?? '';
+        // Let Elementor REST calls through WPFA's normal filter.
+        if ( str_contains( (string) $route, '/elementor/' ) ) {
+            return false;
+        }
+        // Any other REST route → exempt.  The REST request is managing its
+        // own auth flow; WPFA's frontend page is not the right destination.
+        return true;
+    }
+
+    // 3. The redirect target is a REST URL on this site (e.g. the MCP
+    //    bridge's authorize endpoint on a non-REST page load like /authorize).
+    if ( '' !== $redirect ) {
+        $rest_base = rest_url();  // e.g. https://example.com/wp-json/
+        if ( str_starts_with( $redirect, $rest_base ) ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/* -----------------------------------------------------------------------
  * URL filters
  * -------------------------------------------------------------------- */
 
 function wpfa_filter_login_url( string $login_url, string $redirect, bool $force_reauth ): string {
     if ( wpfa_is_elementor_context() ) {
+        return $login_url;
+    }
+    // Exempt OAuth flows and other REST-based auth handlers (e.g. MCP Bridge).
+    // See wpfa_is_login_url_exempt() for the full decision tree.
+    if ( wpfa_is_login_url_exempt( $redirect ) ) {
         return $login_url;
     }
     global $pagenow;
@@ -328,6 +407,15 @@ function wpfa_filter_site_url( string $url, string $path, $scheme ): string {
     global $pagenow;
     if ( wpfa_is_elementor_context() ) {
         return $url;
+    }
+    // Exempt REST-based OAuth flows — same logic as wpfa_filter_login_url().
+    // site_url('wp-login.php', ...) is called internally by wp_login_url(),
+    // so we must also exempt it here to prevent double-filtering.
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        $route = $GLOBALS['wp']->query_vars['rest_route'] ?? '';
+        if ( ! str_contains( (string) $route, '/elementor/' ) ) {
+            return $url;
+        }
     }
     if ( 'wp-login.php' === $pagenow || is_customize_preview() ) {
         return $url;
