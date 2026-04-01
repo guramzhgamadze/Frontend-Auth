@@ -740,9 +740,19 @@ class WPFA_Elementor_Login_Widget extends WPFA_Elementor_Base_Widget {
         $is_editor = \Elementor\Plugin::$instance->editor
                      && \Elementor\Plugin::$instance->editor->is_edit_mode();
 
-        // Logged-in: show nothing (dashboard handled by Yoga Instructor Portal).
-        // In editor: always show the form so the user can style it.
-        if ( is_user_logged_in() && ! $is_editor ) {
+        // FIX: Show the form when reauth=1 is present, even if user is logged in.
+        //
+        // WordPress sets reauth=1 when it requires the user to re-enter their password
+        // (e.g. before accessing the admin dashboard after a long idle period).
+        // Without this exception, a logged-in user hitting /log-in/?reauth=1 sees a
+        // blank page — the widget bails, nothing renders, and they cannot re-authenticate.
+        //
+        // Source: developer.wordpress.org/reference/functions/auth_redirect/
+        //         The login page must render for reauth requests regardless of login state.
+        $is_reauth = ! empty( $_GET['reauth'] ); // phpcs:ignore WordPress.Security.NonceVerification
+
+        // Logged-in with no reauth: show nothing. In editor: always show.
+        if ( is_user_logged_in() && ! $is_editor && ! $is_reauth ) {
             return;
         }
 

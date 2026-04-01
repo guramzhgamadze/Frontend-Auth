@@ -29,7 +29,10 @@ function wpfa_admin_add_menu(): void {
 /* -----------------------------------------------------------------------
  * Register settings (WP Settings API — handles nonce + sanitization)
  * -------------------------------------------------------------------- */
-add_action( 'admin_init', 'wpfa_admin_register_settings' );
+add_action( 'admin_init',    'wpfa_admin_register_settings' );
+// Fix 3 — register_setting() sanitize_callback applies on REST saves only when
+// hooked to rest_api_init too. Source: developer.wordpress.org/reference/functions/register_setting/
+add_action( 'rest_api_init', 'wpfa_admin_register_settings' );
 
 function wpfa_admin_register_settings(): void {
     // General
@@ -41,18 +44,24 @@ function wpfa_admin_register_settings(): void {
         'wpfa_auto_login'      => 'absint',
         'wpfa_honeypot'        => 'absint',
     ];
+    // Fix 7 — autoload:false (no need to load auth options on every page request).
+    // Fix 9 — type declaration for proper schema and REST validation.
     foreach ( $general as $id => $sanitize ) {
-        register_setting( 'wp-frontend-auth', $id, [ 'sanitize_callback' => $sanitize ] );
+        register_setting( 'wp-frontend-auth', $id, [
+            'sanitize_callback' => $sanitize,
+            'type'              => 'string',
+            'autoload'          => false,
+        ] );
     }
 
     // Rate limiting
-    register_setting( 'wp-frontend-auth', 'wpfa_rate_limit',        [ 'sanitize_callback' => 'absint' ] );
-    register_setting( 'wp-frontend-auth', 'wpfa_rate_limit_window', [ 'sanitize_callback' => 'absint' ] );
+    register_setting( 'wp-frontend-auth', 'wpfa_rate_limit',        [ 'sanitize_callback' => 'absint', 'type' => 'integer', 'autoload' => false ] );
+    register_setting( 'wp-frontend-auth', 'wpfa_rate_limit_window', [ 'sanitize_callback' => 'absint', 'type' => 'integer', 'autoload' => false ] );
 
     // Slugs
     $slug_actions = [ 'login', 'logout', 'register', 'lostpassword', 'resetpass' ];
     foreach ( $slug_actions as $action ) {
-        register_setting( 'wp-frontend-auth', "wpfa_slug_{$action}", [ 'sanitize_callback' => 'sanitize_title' ] );
+        register_setting( 'wp-frontend-auth', "wpfa_slug_{$action}", [ 'sanitize_callback' => 'sanitize_title', 'type' => 'string', 'autoload' => false ] );
     }
 }
 

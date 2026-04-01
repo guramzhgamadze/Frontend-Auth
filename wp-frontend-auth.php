@@ -3,8 +3,8 @@
  * Plugin Name:       WP Frontend Auth
  * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
  * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.4.9
- * Requires at least: 6.2
+ * Version:           1.4.11
+ * Requires at least: 6.5
  * Requires PHP:      8.0
  * Author:            Guram Zhgamadze
  * Author URI:        https://github.com/guramzhgamadze
@@ -43,7 +43,7 @@ if ( version_compare( PHP_VERSION, '8.0.0', '<' ) ) {
         echo '<div class="notice notice-error"><p>';
         echo '<strong>WP Frontend Auth</strong> requires PHP 8.0 or higher. ';
         printf(
-            'Your server is running PHP %s. Please upgrade PHP or deactivate the plugin.',
+            esc_html__( 'Your server is running PHP %s. Please upgrade to PHP 8.0 or higher, or deactivate the plugin.', 'wp-frontend-auth' ),
             esc_html( PHP_VERSION )
         );
         echo '</p></div>';
@@ -57,31 +57,27 @@ if ( version_compare( PHP_VERSION, '8.0.0', '<' ) ) {
  * wp_send_new_user_notification_to_user filter requires WP 6.1+.
  * sanitize_url() canonical since WP 5.9. We target 6.2+ minimum.
  * -------------------------------------------------------------------- */
-if ( version_compare( get_bloginfo( 'version' ), '6.2', '<' ) ) {
+if ( version_compare( get_bloginfo( 'version' ), '6.5', '<' ) ) {
     add_action( 'admin_notices', static function (): void {
         echo '<div class="notice notice-error"><p>';
-        echo '<strong>WP Frontend Auth</strong> requires WordPress 6.2 or higher. ';
-        echo 'Please update WordPress or deactivate the plugin.';
+        echo '<strong>' . esc_html__( 'WP Frontend Auth', 'wp-frontend-auth' ) . '</strong> ';
+        echo esc_html__( 'requires WordPress 6.5 or higher. Please update WordPress or deactivate the plugin.', 'wp-frontend-auth' );
         echo '</p></div>';
     } );
     return;
 }
 
-define( 'WPFA_VERSION', '1.4.5' );
+define( 'WPFA_VERSION', '1.4.11' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
 /* -----------------------------------------------------------------------
  * Translations — must run on 'init' so WP locale is finalised first.
  * -------------------------------------------------------------------- */
-add_action( 'init', 'wpfa_load_textdomain', 0 );
-function wpfa_load_textdomain(): void {
-    load_plugin_textdomain(
-        'wp-frontend-auth',
-        false,
-        dirname( plugin_basename( __FILE__ ) ) . '/languages'
-    );
-}
+// Translations are loaded automatically by WordPress since v4.6 (JIT loader).
+// load_plugin_textdomain() is no longer required and was soft-deprecated in
+// WP 6.7 (make.wordpress.org/core/2024/10/21/i18n-improvements-6-7/).
+// The .mo/.po files in /languages/ are auto-discovered from WP_LANG_DIR.
 
 /* -----------------------------------------------------------------------
  * Core files — always loaded

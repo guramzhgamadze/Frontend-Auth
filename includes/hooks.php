@@ -213,6 +213,21 @@ function wpfa_maybe_redirect_logged_in_user(): void {
     if ( ! in_array( $action, [ 'login', 'register' ], true ) ) {
         return;
     }
+
+    // FIX: Do NOT redirect when reauth=1 is present.
+    //
+    // WordPress sets reauth=1 when it needs the user to confirm their credentials
+    // before accessing a sensitive area (e.g. the admin dashboard after a long idle).
+    // The user IS logged in but WordPress requires a fresh password entry.
+    // If we redirect them away from the login page, they cannot re-authenticate and
+    // end up in a redirect loop: admin → login (reauth=1) → admin → login → …
+    //
+    // Source: developer.wordpress.org/reference/functions/auth_redirect/
+    //         core.trac.wordpress.org/browser/tags/6.7/src/wp-login.php#L840
+    if ( ! empty( $_GET['reauth'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+        return;
+    }
+
     $redirect = apply_filters( 'wpfa_logged_in_redirect', admin_url() );
     wp_safe_redirect( $redirect );
     exit;
@@ -341,33 +356,29 @@ function wpfa_no_comments( array $comments ): array {
  */
 function wpfa_is_login_url_exempt( string $redirect ): bool {
     // 1. Explicit opt-out from another plugin.
+    //    Usage: add_filter('wpfa_login_url_exempt', '__return_true') before calling
+    //    wp_login_url(), then remove_filter() immediately after.
     if ( apply_filters( 'wpfa_login_url_exempt', false, $redirect ) ) {
         return true;
     }
 
-    // 2. Inside a REST request that is NOT Elementor and NOT WPFA itself.
-    //    An OAuth authorization server (MCP bridge, WP OAuth Server, etc.)
-    //    calls wp_login_url() with the authorize endpoint as the return URL.
-    //    The WPFA frontend login page has no knowledge of OAuth and would
-    //    silently lose the OAuth parameters on form submission.
-    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
-        $route = $GLOBALS['wp']->query_vars['rest_route'] ?? '';
-        // Let Elementor REST calls through WPFA's normal filter.
-        if ( str_contains( (string) $route, '/elementor/' ) ) {
-            return false;
-        }
-        // Any other REST route → exempt.  The REST request is managing its
-        // own auth flow; WPFA's frontend page is not the right destination.
+    // 2. The redirect target is a REST endpoint on this site.
+    //
+    //    This is the precise, targeted signal that identifies an OAuth / MCP bridge
+    //    flow. When the MCP bridge calls wp_login_url( $authorize_endpoint ), the
+    //    $redirect is something like:
+    //        https://yogahub.online/wp-json/mcp/v1/oauth/authorize?response_type=...
+    //    That URL starts with rest_url() (https://yogahub.online/wp-json/).
+    //
+    //    WPFA's own /log-in/ page submits back to itself and never passes a REST URL
+    //    as the redirect, so normal frontend logins are never affected.
+    //
+    //    We intentionally do NOT exempt based on REST_REQUEST alone. Doing so broke
+    //    the login page: when Elementor's editor (which runs in a REST context)
+    //    called wp_login_url() internally, WPFA stood aside, and users were sent to
+    //    /wp-login.php instead of the custom /log-in/ page.
+    if ( '' !== $redirect && str_starts_with( $redirect, rest_url() ) ) {
         return true;
-    }
-
-    // 3. The redirect target is a REST URL on this site (e.g. the MCP
-    //    bridge's authorize endpoint on a non-REST page load like /authorize).
-    if ( '' !== $redirect ) {
-        $rest_base = rest_url();  // e.g. https://example.com/wp-json/
-        if ( str_starts_with( $redirect, $rest_base ) ) {
-            return true;
-        }
     }
 
     return false;
@@ -407,15 +418,6 @@ function wpfa_filter_site_url( string $url, string $path, $scheme ): string {
     global $pagenow;
     if ( wpfa_is_elementor_context() ) {
         return $url;
-    }
-    // Exempt REST-based OAuth flows — same logic as wpfa_filter_login_url().
-    // site_url('wp-login.php', ...) is called internally by wp_login_url(),
-    // so we must also exempt it here to prevent double-filtering.
-    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
-        $route = $GLOBALS['wp']->query_vars['rest_route'] ?? '';
-        if ( ! str_contains( (string) $route, '/elementor/' ) ) {
-            return $url;
-        }
     }
     if ( 'wp-login.php' === $pagenow || is_customize_preview() ) {
         return $url;

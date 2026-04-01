@@ -122,7 +122,11 @@ function wpfa_handle_login(): void {
     $credentials = [
         'user_login'    => sanitize_user( wpfa_get_request_value( 'log', 'post' ) ),
         'user_password' => wpfa_get_request_value( 'pwd', 'post' ),
-        'remember'      => ! empty( $_POST['rememberme'] ), // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+        // Fix 5 — explicit check against expected value 'forever' matching the form field;
+        //          sanitize_key() strips slashes (WP magic-quotes) and normalises case.
+        //          Source: developer.wordpress.org/apis/security/sanitizing/
+        'remember'      => isset( $_POST['rememberme'] )
+                           && 'forever' === sanitize_key( wp_unslash( $_POST['rememberme'] ) ),
     ];
 
     $user = wp_signon( $credentials, is_ssl() );
@@ -350,9 +354,33 @@ function wpfa_handle_resetpass(): void {
     $pass2    = wpfa_get_request_value( 'pass2', 'post' );
     $form     = wpfa()->get_form( 'resetpass' );
 
+    // FIX: Rate-limit password reset submissions.
+    //
+    // Without this guard, an attacker can brute-force the rp_key (password reset token)
+    // by submitting the reset form in a loop. login, register, and lostpassword all
+    // have rate limiting — resetpass must too for consistent security posture.
+    //
+    // Source: owasp.org/www-community/attacks/Brute_force_attack
+    //         developer.wordpress.org/reference/functions/check_password_reset_key/
+    if ( wpfa_rate_limit_is_locked( 'resetpass' ) ) {
+        $message = sprintf(
+            /* translators: %d = minutes */
+            __( 'Too many attempts. Please try again in %d minutes.', 'wp-frontend-auth' ),
+            wpfa_get_rate_limit_window()
+        );
+        if ( $form ) {
+            $form->add_error( 'too_many_attempts', $message );
+        }
+        if ( $is_ajax ) {
+            wpfa_send_ajax_error( [ 'errors' => [ wp_strip_all_tags( $message ) ] ] );
+        }
+        return;
+    }
+
     $user = check_password_reset_key( $rp_key, $rp_login );
 
     if ( is_wp_error( $user ) ) {
+        wpfa_rate_limit_bump( 'resetpass' ); // FIX: count failed attempts
         $message = __( 'This password reset link has expired or is invalid. Please request a new one.', 'wp-frontend-auth' );
         if ( $form ) {
             $form->add_error( 'invalid_key', $message );
@@ -385,6 +413,7 @@ function wpfa_handle_resetpass(): void {
         return;
     }
 
+    wpfa_rate_limit_clear( 'resetpass' ); // FIX: clear counter on success
     reset_password( $user, $pass1 );
     do_action( 'wpfa_password_reset', $user );
 
