@@ -3,7 +3,7 @@
  * Plugin Name:       WP Frontend Auth
  * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
  * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.4.11
+ * Version:           1.4.12
  * Requires at least: 6.5
  * Requires PHP:      8.0
  * Author:            Guram Zhgamadze
@@ -67,7 +67,7 @@ if ( version_compare( get_bloginfo( 'version' ), '6.5', '<' ) ) {
     return;
 }
 
-define( 'WPFA_VERSION', '1.4.11' );
+define( 'WPFA_VERSION', '1.4.12' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -214,8 +214,19 @@ function wpfa_activate(): void {
     }
     update_option( 'wpfa_version', WPFA_VERSION );
 
-    // Create real WP pages on activation so Elementor can target them.
-    wpfa_create_action_pages();
+    // FIX: Removed automatic wpfa_create_action_pages() call.
+    //
+    // Previously, the plugin auto-created 4 real WP pages (Login, Register,
+    // Lost Password, Reset Password) every time it was activated — including
+    // deactivate→reactivate cycles. This caused unwanted page proliferation
+    // and surprised users who expected manual control over their page structure.
+    //
+    // Page creation is now manual via the "Create Pages" button on the
+    // Frontend Auth settings screen (Settings → Frontend Auth → Page Management).
+    // The virtual-page rewrite system (wpfa_the_posts filter) provides fallback
+    // URLs for all actions even without real pages, so the plugin works out of
+    // the box. Real pages are only needed for Elementor Theme Builder targeting.
+
     wpfa_flush_rewrite_rules();
 }
 

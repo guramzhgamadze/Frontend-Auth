@@ -6,7 +6,7 @@
  *
  * Fixes applied in this version:
  *  #1  Register content_template() was missing password + confirm-password rows.
- *  #2  Group_Control_Box_Shadow (Pro-only) wrapped in class_exists() guard.
+ *  #2  Group_Control_Box_Shadow wrapped in class_exists() guard for safety.
  *  #3  URL-purpose controls changed from TEXT to URL type; render methods updated
  *      to read the URL control's array format ['url' => ...].
  *  #4  $link_callback now initialised to null before if($form) in Register and
@@ -222,7 +222,7 @@ abstract class WPFA_Elementor_Base_Widget extends \Elementor\Widget_Base {
             'size_units' => [ 'px', '%' ],
             'selectors' => [ '{{WRAPPER}} .wpfa-form' => 'border-radius: {{TOP}}{{UNIT}} {{RIGHT}}{{UNIT}} {{BOTTOM}}{{UNIT}} {{LEFT}}{{UNIT}};' ],
         ] );
-        // Fix #2 — Group_Control_Box_Shadow is Pro-only; guard before use.
+        // Fix #2 — class_exists() guard for safety across Elementor versions.
         if ( class_exists( '\\Elementor\\Group_Control_Box_Shadow' ) ) {
             $this->add_group_control( \Elementor\Group_Control_Box_Shadow::get_type(), [ 'name' => 'form_shadow', 'selector' => '{{WRAPPER}} .wpfa-form' ] );
         }
@@ -610,11 +610,23 @@ abstract class WPFA_Elementor_Base_Widget extends \Elementor\Widget_Base {
         $tag = $s['form_title_tag'] ?? 'h3';
         $ok  = [ 'h1','h2','h3','h4','h5','h6','div','span','p' ];
         if ( ! in_array( $tag, $ok, true ) ) { $tag = 'h3'; }
-        // Fix #5 — use Elementor's attribute + inline-editing API instead of raw string output.
-        $this->add_render_attribute( 'form_title', 'class', 'wpfa-form-title' );
+
+        // FIX: The previous code called add_render_attribute() with the return
+        // value of get_render_attribute_string() as the $key parameter. That
+        // method returns a rendered HTML string (e.g. 'class="..." data-...')
+        // but add_render_attribute() expects either an attribute name string or
+        // an array. The rendered string was silently used as an attribute name,
+        // producing malformed HTML like: <h3 class="..." class="..." data-...="...>
+        //
+        // Correct approach: add_inline_editing_attributes() stores attributes
+        // under a render-attribute key matching the setting key ('form_title_text').
+        // We add our CSS class to that same key, then output it. This merges
+        // the class and the inline-editing data attributes into one element.
+        //
+        // Source: developers.elementor.com/docs/widgets/rendering-inline-editing/
+        $this->add_render_attribute( 'form_title_text', 'class', 'wpfa-form-title' );
         $this->add_inline_editing_attributes( 'form_title_text', 'none' );
-        $this->add_render_attribute( 'form_title', $this->get_render_attribute_string( 'form_title_text' ) );
-        echo '<' . esc_attr( $tag ) . ' ' . $this->get_render_attribute_string( 'form_title' ) . '>' . esc_html( $title ) . '</' . esc_attr( $tag ) . '>';
+        echo '<' . esc_attr( $tag ) . ' ' . $this->get_render_attribute_string( 'form_title_text' ) . '>' . esc_html( $title ) . '</' . esc_attr( $tag ) . '>';
     }
 
     /**

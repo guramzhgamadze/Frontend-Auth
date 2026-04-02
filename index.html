@@ -188,19 +188,19 @@ footer a:hover{color:var(--accent)}
     <h1>Frontend Auth for<br><span>WordPress &amp; Elementor</span></h1>
     <p class="subtitle">Secure, accessible login, registration, and password recovery forms that live on your actual site — not wp-login.php.</p>
     <div class="hero-actions">
-      <a href="https://github.com/your-repo/wp-frontend-auth/archive/refs/heads/main.zip" class="btn btn-primary">
+      <a href="https://github.com/guramzhgamadze/Frontend-Auth/archive/refs/heads/main.zip" class="btn btn-primary">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download v1.2.1
+        Download v1.4.12
       </a>
-      <a href="https://github.com/your-repo/wp-frontend-auth" class="btn btn-secondary">
+      <a href="https://github.com/guramzhgamadze/Frontend-Auth" class="btn btn-secondary">
         <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
         View on GitHub
       </a>
     </div>
 
     <div class="reqs">
-      <div class="req-pill"><span class="label">WordPress</span> 6.9+</div>
-      <div class="req-pill"><span class="label">PHP</span> 8.1+</div>
+      <div class="req-pill"><span class="label">WordPress</span> 6.5+</div>
+      <div class="req-pill"><span class="label">PHP</span> 8.0+</div>
       <div class="req-pill"><span class="label">Elementor</span> Optional</div>
       <div class="req-pill"><span class="label">License</span> GPL-2.0</div>
     </div>
@@ -223,13 +223,13 @@ footer a:hover{color:var(--accent)}
       <div class="card">
         <div class="card-icon green">&#9889;</div>
         <h3>Elementor Widgets</h3>
-        <p>Five native Widget_Base widgets with Elementor controls, V4 compatibility, dynamic content flagging, and Theme Builder integration via real WordPress pages.</p>
+        <p>Four native Widget_Base widgets with full Elementor style controls, V4 compatibility, dynamic content flagging, and Theme Builder integration via real WordPress pages.</p>
       </div>
 
       <div class="card">
         <div class="card-icon orange">&#128737;</div>
         <h3>Rate Limiting</h3>
-        <p>Configurable per-IP lockout after failed attempts. Uses transients with anonymised IP hashing. Protects login, registration, and lost-password forms.</p>
+        <p>Configurable per-IP lockout after failed attempts. Uses transients with anonymised IP hashing. Protects login, registration, lost-password, and reset-password forms.</p>
       </div>
 
       <div class="card">
@@ -290,27 +290,22 @@ footer a:hover{color:var(--accent)}
           <tr>
             <td><code>wpfa-login</code></td>
             <td>Login Form</td>
-            <td>Redirect URL, show links, show dashboard when logged in</td>
+            <td>Custom labels, placeholders, toggle text, link URLs, redirect URL, remember me</td>
           </tr>
           <tr>
             <td><code>wpfa-register</code></td>
             <td>Registration Form</td>
-            <td>Redirect URL, show links</td>
+            <td>Custom labels, placeholders, toggle text, link URL, redirect URL, strength meter</td>
           </tr>
           <tr>
             <td><code>wpfa-lost-password</code></td>
             <td>Lost Password Form</td>
-            <td>Redirect URL, show links</td>
+            <td>Custom label, placeholder, link URL, redirect URL</td>
           </tr>
           <tr>
             <td><code>wpfa-reset-password</code></td>
             <td>Reset Password Form</td>
-            <td>Custom invalid-link message</td>
-          </tr>
-          <tr>
-            <td><code>wpfa-dashboard</code></td>
-            <td>Auth Dashboard</td>
-            <td>Show login when logged out, redirect URL, show links</td>
+            <td>Custom labels, placeholders, toggle text, invalid-link message, request-link URL</td>
           </tr>
         </tbody>
       </table>
@@ -328,6 +323,8 @@ footer a:hover{color:var(--accent)}
       <span class="cmd">wp plugin install wp-frontend-auth.zip --activate</span><br><br>
       <span class="comment"># Flush rewrite rules</span><br>
       <span class="cmd">wp rewrite flush</span><br><br>
+      <span class="comment"># Optional: create real pages for Elementor Theme Builder</span><br>
+      <span class="comment"># (or use the "Create Missing Pages" button in Settings)</span><br><br>
       <span class="comment"># Optional: enable AJAX forms and user-chosen passwords</span><br>
       <span class="cmd">wp option update wpfa_use_ajax 1</span><br>
       <span class="cmd">wp option update wpfa_user_passwords 1</span><br><br>

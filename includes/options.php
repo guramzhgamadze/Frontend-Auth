@@ -186,6 +186,11 @@ function wpfa_create_action_pages(): void {
             continue;
         }
 
+        // FIX: Mark this page as auto-created by the plugin so the uninstaller
+        // and the "Delete Auto-Created Pages" button know it is safe to delete.
+        // Pages adopted from existing user content do NOT get this flag.
+        update_post_meta( (int) $page_id, '_wpfa_auto_created', '1' );
+
         update_option( $opt, (int) $page_id );
     }
 }

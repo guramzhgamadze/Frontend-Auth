@@ -4,51 +4,53 @@ Secure, accessible frontend login, registration, and password recovery forms for
 
 ## Description
 
-WP Frontend Auth replaces the default `wp-login.php` experience with clean, theme-integrated forms that live on your actual site. It works out of the box on any WordPress theme and ships with first-class Elementor support — five drag-and-drop widgets that fit into any page builder layout with full Theme Builder compatibility.
+WP Frontend Auth replaces the default `wp-login.php` experience with clean, theme-integrated forms that live on your actual site. It works out of the box on any WordPress theme and ships with first-class Elementor support — four drag-and-drop widgets that fit into any page builder layout with full Theme Builder compatibility.
 
 ### What It Does
 
 - **Login form** with username, email, or either — configurable from Settings.
 - **Registration form** with optional user-chosen passwords and auto-login.
 - **Lost Password / Reset Password** forms with full email flow integration.
-- **Logged-in dashboard** widget showing avatar, greeting, and quick links.
 - **URL rewriting** — all `wp-login.php` links site-wide are transparently redirected to your frontend pages.
 - **Multisite support** — network-activated, per-site settings, signup/activation flow handled.
 
 ### Security
 
 - **Nonce verification** on every form submission.
-- **Rate limiting** — configurable max attempts per IP with lockout window (uses transients).
-- **Honeypot spam protection** — rotating hidden field catches bots, silently fakes success.
-- **IP anonymisation** — rate-limit keys hash truncated IPs (last octet zeroed for IPv4, /48 for IPv6).
+- **Rate limiting** — configurable max attempts per IP with lockout window (uses transients). Applied to all four handlers: login, register, lost-password, and reset-password.
+- **Honeypot spam protection** — rotating hidden field (hourly key rotation via HMAC) catches bots. Trapped submissions get a fake success response — bots never know they failed.
+- **IP anonymisation** — rate-limit keys hash truncated IPs (last octet zeroed for IPv4, /48 for IPv6). Defaults to `REMOTE_ADDR` only — forwarded headers require explicit opt-in via the `wpfa_rate_limit_ip_headers` filter.
 - **No password pre-population** — password fields are never re-filled from POST data.
 - **bcrypt-compatible** — uses `wp_set_password()` / `wp_signon()` which support WP 6.8+ bcrypt hashing.
+- **Password minimum length** — reset and registration passwords require at least 8 characters.
 
 ### Elementor Integration
 
-Five native `Widget_Base` widgets registered via `elementor/widgets/register`:
+Four native `Widget_Base` widgets registered via `elementor/widgets/register`:
 
 | Widget | Class | Description |
 |--------|-------|-------------|
-| Login Form | `WPFA_Elementor_Login_Widget` | Login form; shows dashboard when logged in |
-| Registration Form | `WPFA_Elementor_Register_Widget` | Registration form; editor placeholder when disabled |
-| Lost Password Form | `WPFA_Elementor_Lost_Password_Widget` | Password recovery request form |
-| Reset Password Form | `WPFA_Elementor_Reset_Password_Widget` | Password reset form (reads `?key=&login=` from URL) |
-| Auth Dashboard | `WPFA_Elementor_Dashboard_Widget` | Logged-in panel; optional login form when logged out |
+| Login Form | `WPFA_Elementor_Login_Widget` | Login form with custom labels, placeholders, toggle text, and link overrides. Hidden when logged in (unless `reauth=1`). |
+| Registration Form | `WPFA_Elementor_Register_Widget` | Registration form with password + confirm fields when user-chosen passwords are enabled. Editor placeholder when registration is disabled. |
+| Lost Password Form | `WPFA_Elementor_Lost_Password_Widget` | Password recovery request form. |
+| Reset Password Form | `WPFA_Elementor_Reset_Password_Widget` | Password reset form — reads `?key=&login=` from the URL. Shows invalid-link message when parameters are missing, with an editor preview of the form fields. |
 
-All widgets declare `is_dynamic_content(): true` to disable Elementor output caching (forms contain nonces and user-specific state) and `has_widget_inner_wrapper(): false` for V4 compatibility.
+All widgets share a comprehensive Elementor style panel: form container (width, max-width, alignment, background, border, radius, shadow, padding), title typography, label styling, input fields (text colour, placeholder colour, background, border, focus state with glow), button (normal + hover tabs with typography, padding, radius, shadow, transition), action links, messages/errors, password toggle (normal + hover tabs), and checkbox styling.
 
-On activation, the plugin creates real WordPress pages (`/login/`, `/register/`, `/lost-password/`, `/reset-password/`) so Elementor Theme Builder conditions work correctly. No virtual post hacks needed.
+Only the Reset Password widget declares `is_dynamic_content(): true` (it reads `$_GET` parameters). The other three return `false` for optimal Elementor caching.
+
+#### Page Management
+
+The plugin includes a **Page Management** panel in the settings screen. You can manually create real WordPress pages for each auth action so Elementor Theme Builder conditions work correctly (Singular > Page targeting by ID). Pages are **not** created automatically on activation — you choose when and whether to create them. The plugin works without real pages via its virtual URL rewrite system.
 
 ### Classic Widgets
 
-Five `WP_Widget` subclasses are also registered for classic sidebar/widget-area use:
+Four `WP_Widget` subclasses are also registered for classic sidebar/widget-area use:
 
 - `WPFA_Login_Widget`
 - `WPFA_Register_Widget`
 - `WPFA_Lost_Password_Widget`
 - `WPFA_Reset_Password_Widget`
-- `WPFA_Dashboard_Widget`
 
 All expose `show_instance_in_rest` for the WP 5.8+ block-based Widgets screen.
 
@@ -56,32 +58,33 @@ All expose `show_instance_in_rest` for the WP 5.8+ block-based Widgets screen.
 
 | Dependency | Minimum |
 |-----------|---------|
-| WordPress | 6.9+ |
-| PHP | 8.1+ |
+| WordPress | 6.5+ |
+| PHP | 8.0+ |
 | Elementor | Optional — plugin works without it |
 
 ## Installation
 
 1. Upload the `wp-frontend-auth` folder to `/wp-content/plugins/`.
 2. Activate the plugin through **Plugins → Installed Plugins**.
-3. Go to **Settings → Frontend Auth** to configure options.
-4. Visit **Settings → Permalinks** and click **Save Changes** to flush rewrite rules.
-5. *(Elementor users)* Open any page in the Elementor editor and search for "Login Form", "Registration Form", etc. in the widget panel.
+3. Go to **Frontend Auth** in the admin sidebar to configure options.
+4. *(Optional)* Click **Create Missing Pages** in the Page Management section to create real WordPress pages for Elementor Theme Builder targeting.
+5. Visit **Settings → Permalinks** and click **Save Changes** to flush rewrite rules (or run `wp rewrite flush`).
+6. *(Elementor users)* Open any page in the Elementor editor and search for "Login Form", "Registration Form", etc. in the widget panel under the **Frontend Auth** category.
 
 ## Settings
 
-All settings are under **Settings → Frontend Auth**:
+All settings are under the **Frontend Auth** admin menu:
 
 ### General
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Login with | Username or Email | Restrict to username-only or email-only |
-| Use pretty URLs | On | Uses `/login/` instead of `?action=login` |
+| Pretty URLs | On | Uses `/login/` instead of `?action=login` |
 | AJAX forms | Off | Submit forms without page reload |
-| Allow users to set own password | Off | Shows password fields on registration form |
-| Auto-login after registration | Off | Logs users in immediately after registering |
-| Honeypot spam protection | On | Hidden field to catch bots |
+| User-chosen passwords | Off | Shows password fields on registration form |
+| Auto-login | Off | Logs users in immediately after registering |
+| Honeypot protection | On | Hidden field to catch bots |
 
 ### Rate Limiting
 
@@ -92,7 +95,14 @@ All settings are under **Settings → Frontend Auth**:
 
 ### Page Slugs
 
-Each action URL slug is customisable: `login`, `logout`, `register`, `lost-password`, `reset-password`, `dashboard`.
+Each action URL slug is customisable: `login`, `logout`, `register`, `lostpassword` (default: `lost-password`), `resetpass` (default: `reset-password`).
+
+### Page Management
+
+| Button | Description |
+|--------|-------------|
+| Create Missing Pages | Creates real WordPress pages for any auth action that doesn't already have one. Existing pages with matching slugs are adopted, not duplicated. |
+| Delete Auto-Created Pages | Removes only pages the plugin created. Pages you created manually and the plugin adopted are left intact. |
 
 ## Hooks & Filters
 
@@ -100,10 +110,13 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lost-passw
 
 | Hook | Parameters | Description |
 |------|-----------|-------------|
-| `wpfa_init` | `WPFA $instance` | Fires when the core class initializes |
+| `wpfa_init` | `WPFA $instance` | Fires when the core class initialises |
+| `wpfa_registered_action` | `string $name, array $args` | After an action is registered |
+| `wpfa_registered_form` | `string $name, WPFA_Form $form` | After a form is registered |
 | `wpfa_before_form_{name}` | `WPFA_Form $form` | Before form HTML renders |
 | `wpfa_after_form_{name}` | `WPFA_Form $form` | After form HTML renders |
 | `wpfa_{name}_form` | — | Inside form, for adding custom fields |
+| `wpfa_action_{action}` | — | Fires when a POST action is dispatched |
 | `wpfa_login_failed` | `string $username` | After a failed login attempt |
 | `wpfa_login_success` | `WP_User $user` | After successful login |
 | `wpfa_logout_success` | — | After successful logout |
@@ -122,13 +135,14 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lost-passw
 | `wpfa_use_honeypot` | `true` | Toggle honeypot protection |
 | `wpfa_rate_limit` | `10` | Max failed attempts |
 | `wpfa_rate_limit_window` | `15` | Lockout window in minutes |
+| `wpfa_rate_limit_ip_headers` | `['REMOTE_ADDR']` | `$_SERVER` keys checked for client IP (add forwarded headers only behind a verified proxy) |
 | `wpfa_action_url` | — | Filter any action URL |
 | `wpfa_action_slug_{action}` | — | Filter a specific action's slug |
 | `wpfa_username_label` | — | Filter the username field label |
 | `wpfa_logged_in_redirect` | `admin_url()` | Redirect URL for logged-in users hitting login/register |
 | `wpfa_logout_redirect` | `home_url()` | Redirect URL after logout |
+| `wpfa_login_url_exempt` | `false` | Return `true` to bypass WPFA's login URL rewriting (for OAuth/MCP flows) |
 | `wpfa_script_data` | — | Filter the JS config object |
-| `wpfa_dashboard_links` | — | Filter dashboard widget links |
 | `wpfa_form_links_{name}` | — | Filter action links below a form |
 | `wpfa_form_attributes_{name}` | — | Add custom HTML attributes to a form |
 | `wpfa_widget_form_output` | — | Filter rendered form HTML |
@@ -141,24 +155,27 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lost-passw
 
 WP Frontend Auth fires the standard WordPress form hooks (`login_form`, `register_form`, `lostpassword_form`, `resetpass_form`) inside its forms. This means plugins that add fields to WordPress's native login — including 2FA plugins, CAPTCHA plugins, and social login plugins — will render their fields inside WPFA forms automatically.
 
+An OAuth/REST exemption system is also built in: when another plugin (e.g. WordPress MCP Bridge) calls `wp_login_url()` with a REST API redirect target, WPFA automatically stands aside and returns the native `/wp-login.php` URL. Plugins can also use the `wpfa_login_url_exempt` filter for explicit opt-out.
+
 ## File Structure
 
 ```
 wp-frontend-auth/
-├── wp-frontend-auth.php          Main plugin file
-├── uninstall.php                 Cleanup on deletion
+├── wp-frontend-auth.php          Main plugin file (activation, deactivation, Elementor loader)
+├── uninstall.php                 Cleanup on deletion (respects user-created pages)
 ├── README.md                     This file
-├── index.html                    GitHub Pages promo site
+├── index.html                    GitHub Pages landing page
 ├── admin/
-│   ├── settings.php              Settings page & field renderers
-│   └── hooks.php                 Admin-only hooks
+│   ├── settings.php              Settings page with card-based UI
+│   └── hooks.php                 Admin hooks, slug sync, page management handlers
 ├── assets/
 │   ├── scripts/
 │   │   ├── wp-frontend-auth.js   Frontend JS (AJAX, password toggle, strength meter)
 │   │   └── wp-frontend-auth.min.js
 │   └── styles/
-│       ├── wp-frontend-auth.css  Frontend CSS
-│       └── wp-frontend-auth.min.css
+│       ├── wp-frontend-auth.css       Frontend CSS (CSS custom properties, V4 compatible)
+│       ├── wp-frontend-auth.min.css
+│       └── wp-frontend-auth-editor.css  Elementor editor-only styles
 ├── includes/
 │   ├── class-wpfa.php            Core singleton (actions & forms registry)
 │   ├── class-wpfa-form.php       Form class (fields, rendering, errors)
@@ -166,39 +183,64 @@ wp-frontend-auth/
 │   ├── helpers.php               Request helpers, URL helpers, honeypot, Elementor detection
 │   ├── handlers.php              Form POST handlers (login, register, lostpassword, resetpass)
 │   ├── hooks.php                 Frontend hooks, rewrites, URL filters, virtual pages
-│   ├── forms.php                 Form definitions (field registration)
-│   ├── widgets.php               Classic WP_Widget classes
+│   ├── forms.php                 Form definitions (field registration, link filters)
+│   ├── widgets.php               Classic WP_Widget classes (4 widgets)
 │   ├── rate-limit.php            Rate limiting via transients
 │   ├── ms-hooks.php              Multisite-specific hooks
 │   └── elementor/
-│       └── class-wpfa-elementor-widgets.php   Elementor Widget_Base classes
+│       └── class-wpfa-elementor-widgets.php   Elementor Widget_Base classes (4 widgets)
 └── languages/
     └── .gitkeep
 ```
 
 ## Changelog
 
-### 1.2.1
+### 1.4.12
 
 **Bug Fixes**
 
-- **Critical:** Fixed wrong filter hook for suppressing user notification emails when user-chosen passwords are enabled. The plugin was hooking `wp_send_new_user_notifications` (a function name, not a filter). Changed to the correct `wp_send_new_user_notification_to_user` filter (WP 6.1+). Without this fix, users who set their own password during registration still received the "click here to set your password" email — which was incorrect and confusing.
-- **Medium:** Added missing CSS styles for `.wpfa-password-toggle` button. The password show/hide toggle rendered as an unstyled browser-default button.
-- **Medium:** `retrieve_password()` call in lost-password handler now uses the `wpfa_get_request_value()` helper for consistency with other handlers (was previously accessing `$_POST` directly).
-- **Low:** Focus accessibility improvement — `:focus` styles now use `outline: 2px solid transparent` instead of `outline: none` so browsers without `:focus-visible` support still show a visible focus ring via `box-shadow`.
-- **Low:** Added `typeof wpFrontendAuth` guard in the frontend JS to prevent `ReferenceError` if the inline config script fails to output.
-- **Low:** Minified assets (`.min.css`, `.min.js`) are now properly minified (47% and 54% size reduction respectively). Previously these files were identical or near-identical to the unminified versions.
+- **Critical:** Removed automatic page creation on plugin activation/reactivation. Previously, deactivating and reactivating the plugin created duplicate Login, Register, Lost Password, and Reset Password pages every cycle. Pages are now managed manually via a new **Page Management** panel in the settings screen with "Create Missing Pages" and "Delete Auto-Created Pages" buttons.
+- **Critical:** Fixed `render_form_title()` in Elementor widgets — `add_render_attribute()` was called with the return value of `get_render_attribute_string()` as the attribute name, producing malformed HTML on every widget with a form title.
+- **High:** Fixed password toggle click listeners stacking on Elementor pages. `document.addEventListener('click', ...)` was inside `bindPasswordToggle()` which runs on every Elementor `element_ready` re-render. After N renders, N+1 identical listeners caused rapid toggle flicker. Moved to a single document-level delegate registered once at boot.
+- **High:** Fixed Elementor `element_ready` hooks never registering. Used native `addEventListener` for `elementor/frontend/init` but Elementor fires this via jQuery's event system. Changed to `jQuery(window).on(...)`.
+- **Medium:** Fixed `uninstall.php` deleting user-created pages. Now tracks auto-created pages via `_wpfa_auto_created` post meta and only deletes those.
+- **Low:** Corrected `Group_Control_Box_Shadow` comments incorrectly stating it is "Pro-only" — it is available in free Elementor.
+
+### 1.4.11
+
+- Fixed double admin notification email on registration when user-chosen passwords are enabled.
+- Fixed hardcoded `post_author => 1` in auto-created pages.
+- Fixed IP address spoofing in rate limiter — defaults to `REMOTE_ADDR` only.
+- Added rate limiting to the reset-password handler.
+- Added `reauth=1` support for re-authentication without redirect loops.
+- Fixed OAuth/REST exemption for login URL rewriting (MCP Bridge compatibility).
+
+### 1.4.8
+
+- Fixed triple-brace in placeholder HTML attributes in Elementor content templates.
+- Wired `bindPasswordToggle()` and `bindPasswordStrength()` to Elementor `element_ready` lifecycle.
+- Replaced `outline:none` with `:focus/:focus-visible` pair (WCAG 2.2).
+- Added `Group_Control_Typography` for error/success messages, Remember Me, and strength meter.
+- Added text-decoration control for action links.
+- Renamed heading control IDs to `wpfa_h_*` to avoid cross-widget collision.
+
+### 1.4.3
+
+- Fixed `const wpFrontendAuth` declared twice causing SyntaxError on Elementor pages.
+- Fixed Elementor editor filter leak — closures inside `render()` now cleaned up immediately.
+
+### 1.4.0
+
+- Real WordPress pages for auth actions (Elementor Theme Builder compatibility).
+- Full Elementor style panel with 15+ control sections.
+- Custom label, placeholder, button text, and link URL overrides per widget instance.
+- Password toggle with per-field Show/Hide text via data attributes.
+- Form self-posting for reliable AJAX on Elementor pages.
+- Elementor V4 Atomic Widgets compatibility (`has_widget_inner_wrapper(): false`).
 
 ### 1.2.0
 
 - Initial public release.
-- Login, registration, lost-password, and reset-password forms.
-- Elementor Widget_Base widgets (5) and classic WP_Widget widgets (5).
-- Rate limiting, honeypot protection, AJAX support.
-- Multisite support with network activation.
-- Real WordPress pages created on activation for Elementor Theme Builder compatibility.
-- URL rewriting for all `wp-login.php` references.
-- Customisable slugs, login-type enforcement, user-chosen passwords, auto-login.
 
 ## License
 

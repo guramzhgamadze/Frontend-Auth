@@ -83,3 +83,69 @@ function wpfa_enqueue_elementor_editor_styles(): void {
         WPFA_VERSION
     );
 }
+
+/* -----------------------------------------------------------------------
+ * Manual page creation / deletion handlers
+ *
+ * FIX: Pages are no longer auto-created on activation. These admin-post
+ * handlers give the user explicit manual control via the settings page.
+ * -------------------------------------------------------------------- */
+
+add_action( 'admin_post_wpfa_create_pages', 'wpfa_admin_handle_create_pages' );
+
+function wpfa_admin_handle_create_pages(): void {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'Unauthorized.', 'wp-frontend-auth' ), 403 );
+    }
+    check_admin_referer( 'wpfa_create_pages', 'wpfa_pages_nonce' );
+    wpfa_create_action_pages();
+    wpfa_flush_rewrite_rules();
+    wp_safe_redirect( add_query_arg( 'wpfa_notice', 'pages_created', admin_url( 'admin.php?page=wp-frontend-auth' ) ) );
+    exit;
+}
+
+add_action( 'admin_post_wpfa_delete_pages', 'wpfa_admin_handle_delete_pages' );
+
+function wpfa_admin_handle_delete_pages(): void {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( esc_html__( 'Unauthorized.', 'wp-frontend-auth' ), 403 );
+    }
+    check_admin_referer( 'wpfa_delete_pages', 'wpfa_pages_nonce' );
+
+    foreach ( array_keys( wpfa_get_page_actions() ) as $action ) {
+        $opt     = "wpfa_page_id_{$action}";
+        $page_id = (int) get_option( $opt, 0 );
+        if ( ! $page_id ) {
+            continue;
+        }
+        // Only delete pages that the plugin auto-created (not user-adopted pages).
+        // wpfa_create_action_pages() sets this meta flag on every page it inserts.
+        if ( get_post_meta( $page_id, '_wpfa_auto_created', true ) ) {
+            wp_delete_post( $page_id, true );
+        }
+        delete_option( $opt );
+    }
+
+    wpfa_flush_rewrite_rules();
+    wp_safe_redirect( add_query_arg( 'wpfa_notice', 'pages_deleted', admin_url( 'admin.php?page=wp-frontend-auth' ) ) );
+    exit;
+}
+
+/* -----------------------------------------------------------------------
+ * Admin notices for page management actions
+ * -------------------------------------------------------------------- */
+add_action( 'admin_notices', 'wpfa_admin_page_notices' );
+
+function wpfa_admin_page_notices(): void {
+    if ( ! isset( $_GET['wpfa_notice'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+        return;
+    }
+    $notice = sanitize_key( wp_unslash( $_GET['wpfa_notice'] ) ); // phpcs:ignore WordPress.Security.NonceVerification
+    $messages = [
+        'pages_created' => __( 'Auth pages have been created successfully.', 'wp-frontend-auth' ),
+        'pages_deleted' => __( 'Auto-created auth pages have been deleted.', 'wp-frontend-auth' ),
+    ];
+    if ( isset( $messages[ $notice ] ) ) {
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $messages[ $notice ] ) . '</p></div>';
+    }
+}

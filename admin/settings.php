@@ -214,6 +214,63 @@ function wpfa_admin_settings_page(): void {
                 <?php submit_button( __( 'Save Changes', 'wp-frontend-auth' ), 'primary', 'submit', false ); ?>
             </div>
         </form>
+
+        <!-- Page Management — outside main <form> because it uses its own nonce + action -->
+        <div class="wpfa-card" style="margin-top:20px;">
+            <h2><?php esc_html_e( 'Page Management', 'wp-frontend-auth' ); ?></h2>
+            <p class="desc"><?php esc_html_e( 'Create or remove the real WordPress pages used by each auth action. Pages are only required for Elementor Theme Builder targeting — the plugin works without them via virtual URL rewrites.', 'wp-frontend-auth' ); ?></p>
+
+            <table class="widefat" style="border:none; box-shadow:none; background:transparent;">
+                <thead>
+                    <tr>
+                        <th style="padding:8px 0;font-size:0.88rem;"><?php esc_html_e( 'Action', 'wp-frontend-auth' ); ?></th>
+                        <th style="padding:8px 0;font-size:0.88rem;"><?php esc_html_e( 'Page', 'wp-frontend-auth' ); ?></th>
+                        <th style="padding:8px 0;font-size:0.88rem;"><?php esc_html_e( 'Status', 'wp-frontend-auth' ); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    foreach ( wpfa_get_page_actions() as $action => $title ) :
+                        $page_id   = wpfa_get_page_id( $action );
+                        $page_post = $page_id ? get_post( $page_id ) : null;
+                        $exists    = $page_post instanceof WP_Post && 'publish' === $page_post->post_status;
+                        $slug      = wpfa_get_action_slug( $action );
+                    ?>
+                    <tr>
+                        <td style="padding:10px 0;font-weight:600;"><?php echo esc_html( $title ); ?> <code>/<?php echo esc_html( $slug ); ?>/</code></td>
+                        <td style="padding:10px 0;">
+                            <?php if ( $exists ) : ?>
+                                <a href="<?php echo esc_url( get_edit_post_link( $page_id ) ); ?>"><?php echo esc_html( get_the_title( $page_id ) ); ?></a>
+                                <span style="color:#888;">(ID <?php echo esc_html( (string) $page_id ); ?>)</span>
+                            <?php else : ?>
+                                <span style="color:#888;">&mdash;</span>
+                            <?php endif; ?>
+                        </td>
+                        <td style="padding:10px 0;">
+                            <?php if ( $exists ) : ?>
+                                <span style="color:#00a32a;">&#10003; <?php esc_html_e( 'Published', 'wp-frontend-auth' ); ?></span>
+                            <?php else : ?>
+                                <span style="color:#996800;"><?php esc_html_e( 'Not created', 'wp-frontend-auth' ); ?></span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <div style="display:flex;gap:12px;margin-top:16px;">
+                <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+                    <?php wp_nonce_field( 'wpfa_create_pages', 'wpfa_pages_nonce' ); ?>
+                    <input type="hidden" name="action" value="wpfa_create_pages">
+                    <?php submit_button( __( 'Create Missing Pages', 'wp-frontend-auth' ), 'secondary', 'submit', false ); ?>
+                </form>
+                <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('<?php echo esc_js( __( 'This will permanently delete only the auto-created pages (not pages you created manually). Continue?', 'wp-frontend-auth' ) ); ?>');">
+                    <?php wp_nonce_field( 'wpfa_delete_pages', 'wpfa_pages_nonce' ); ?>
+                    <input type="hidden" name="action" value="wpfa_delete_pages">
+                    <?php submit_button( __( 'Delete Auto-Created Pages', 'wp-frontend-auth' ), 'delete', 'submit', false ); ?>
+                </form>
+            </div>
+        </div>
     </div>
     <?php
 }

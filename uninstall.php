@@ -52,11 +52,16 @@ function wpfa_uninstall_site( array $options, array $page_actions ): void {
         delete_option( $option );
     }
     // Delete auto-created pages and their stored IDs.
+    // FIX: Only delete pages that were auto-created by the plugin (flagged with
+    // _wpfa_auto_created post meta). Pages the user created manually and the
+    // plugin merely "adopted" by storing their ID are left intact.
     foreach ( $page_actions as $action ) {
         $opt     = "wpfa_page_id_{$action}";
         $page_id = (int) get_option( $opt, 0 );
         if ( $page_id ) {
-            wp_delete_post( $page_id, true ); // true = force delete, skip trash
+            if ( get_post_meta( $page_id, '_wpfa_auto_created', true ) ) {
+                wp_delete_post( $page_id, true ); // true = force delete, skip trash
+            }
         }
         delete_option( $opt );
     }

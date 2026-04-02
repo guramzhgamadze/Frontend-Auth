@@ -176,6 +176,25 @@
             }
         } );
 
+        // FIX: Removed document.addEventListener('click', ...) from here.
+        //
+        // Previously, the click delegation handler was INSIDE bindPasswordToggle().
+        // This function is called on initial boot AND on every Elementor element_ready
+        // re-render. Each call stacked a new document-level click listener — after N
+        // re-renders there were N+1 identical handlers all toggling the same password
+        // field, causing a visible flicker (hide→show→hide→show in rapid succession).
+        //
+        // The delegation handler is now registered ONCE at boot time (see
+        // initPasswordToggleDelegate below). Since it uses event delegation on
+        // document, it automatically handles dynamically-injected toggle buttons
+        // without needing to be re-bound.
+    };
+
+    /**
+     * Single document-level click delegate for password toggle buttons.
+     * Registered once at boot time — handles all current and future toggle buttons.
+     */
+    const initPasswordToggleDelegate = () => {
         document.addEventListener( 'click', e => {
             const btn = e.target.closest( '.wpfa-password-toggle' );
             if ( ! btn ) {
@@ -316,25 +335,43 @@
     bindPasswordStrength();
     handleQueryMessages();
 
+    // Register the document-level click delegate for password toggle — ONCE.
+    initPasswordToggleDelegate();
+
     // Fix D — direct call for non-Elementor pages (classic WP pages, shortcodes, sidebar widgets)
     bindPasswordToggle( document );
 
     // Fix D — also bind via Elementor element_ready so toggles survive editor re-renders
     // and AJAX-loaded pages (Theme Builder popups, loop items, etc.)
-    // Uses window.addEventListener('elementor/frontend/init') per official Elementor docs —
-    // NOT if(window.elementorFrontend), which silently misses pre-fired events.
-    window.addEventListener( 'elementor/frontend/init', () => {
-        const widgetNames = [ 'wpfa-login', 'wpfa-register', 'wpfa-reset-password' ];
-        widgetNames.forEach( name => {
-            window.elementorFrontend.hooks.addAction(
-                `frontend/element_ready/${ name }.default`,
-                ( $scope ) => {
-                    if ( ! $scope || ! $scope[ 0 ] ) { return; }
-                    bindPasswordToggle( $scope[ 0 ] );
-                    bindPasswordStrength( $scope[ 0 ] );
-                }
-            );
+    //
+    // FIX: Changed from window.addEventListener('elementor/frontend/init', ...) to
+    // jQuery(window).on('elementor/frontend/init', ...).
+    //
+    // Elementor fires this event via jQuery's event system:
+    //   jQuery(window).trigger('elementor/frontend/init')
+    // Native addEventListener() cannot catch jQuery-triggered custom events —
+    // the element_ready hooks were never registered, so password toggles and
+    // strength meters failed on Elementor AJAX-loaded content (Theme Builder
+    // popups, loop items, editor preview re-renders).
+    //
+    // jQuery is guaranteed available because it's a declared script dependency.
+    //
+    // Source: github.com/elementor/elementor/blob/main/assets/dev/js/frontend/frontend.js
+    //         (elementorFrontend.trigger('elementor/frontend/init'))
+    if ( typeof jQuery !== 'undefined' ) {
+        jQuery( window ).on( 'elementor/frontend/init', () => {
+            const widgetNames = [ 'wpfa-login', 'wpfa-register', 'wpfa-reset-password' ];
+            widgetNames.forEach( name => {
+                window.elementorFrontend.hooks.addAction(
+                    `frontend/element_ready/${ name }.default`,
+                    ( $scope ) => {
+                        if ( ! $scope || ! $scope[ 0 ] ) { return; }
+                        bindPasswordToggle( $scope[ 0 ] );
+                        bindPasswordStrength( $scope[ 0 ] );
+                    }
+                );
+            } );
         } );
-    } );
+    }
 
 } )();
