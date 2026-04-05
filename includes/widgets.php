@@ -450,8 +450,8 @@ class WPFA_Reset_Password_Widget extends WPFA_Abstract_Widget {
     public function widget( $args, $instance ): void {
         $instance = $this->parse_instance( $instance );
 
-        $rp_key   = sanitize_text_field( wp_unslash( $_GET['key']   ?? '' ) );
-        $rp_login = sanitize_text_field( wp_unslash( $_GET['login'] ?? '' ) );
+        $rp_key   = is_string( $_GET['key']   ?? '' ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) )   : '';
+        $rp_login = is_string( $_GET['login'] ?? '' ) ? sanitize_text_field( wp_unslash( $_GET['login'] ) ) : '';
 
         echo $args['before_widget']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 

@@ -118,7 +118,18 @@ function wpfa_rate_limit_is_locked( $action ) {
  * @param string $action
  */
 function wpfa_rate_limit_clear( $action ) {
-    delete_transient( wpfa_rate_limit_key( $action ) );
+    $key = wpfa_rate_limit_key( $action );
+    delete_transient( $key );
+    // FIX (v1.4.14): Also clear the timestamp transient.
+    //
+    // wpfa_rate_limit_bump() stores a companion _ts transient alongside the
+    // counter to track when the lockout window started. Without clearing it
+    // here, wpfa_rate_limit_remaining_seconds() returns a stale non-zero
+    // value after a successful login — misleading any theme or plugin that
+    // calls it to display "try again in X minutes" even though the user is
+    // no longer locked out. The orphaned _ts also wastes a database row
+    // (or object cache key) until its TTL naturally expires.
+    delete_transient( $key . '_ts' );
 }
 
 /**

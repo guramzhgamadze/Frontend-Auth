@@ -125,7 +125,7 @@ function wpfa_handle_login(): void {
         // Fix 5 — explicit check against expected value 'forever' matching the form field;
         //          sanitize_key() strips slashes (WP magic-quotes) and normalises case.
         //          Source: developer.wordpress.org/apis/security/sanitizing/
-        'remember'      => isset( $_POST['rememberme'] )
+        'remember'      => isset( $_POST['rememberme'] ) && is_string( $_POST['rememberme'] )
                            && 'forever' === sanitize_key( wp_unslash( $_POST['rememberme'] ) ),
     ];
 

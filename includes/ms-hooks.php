@@ -52,7 +52,7 @@ add_action( 'init', 'wpfa_ms_maybe_show_activation_notice' );
 function wpfa_ms_maybe_show_activation_notice(): void {
     // BUG-4 fix: sanitize the GET param and check for the specific value '1'
     // to avoid false triggers from other plugins using the same param name.
-    $activated = isset( $_GET['activated'] ) ? sanitize_key( wp_unslash( $_GET['activated'] ) ) : '';
+    $activated = isset( $_GET['activated'] ) && is_string( $_GET['activated'] ) ? sanitize_key( wp_unslash( $_GET['activated'] ) ) : '';
     if ( '1' !== $activated ) {
         return;
     }

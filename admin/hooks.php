@@ -137,7 +137,7 @@ function wpfa_admin_handle_delete_pages(): void {
 add_action( 'admin_notices', 'wpfa_admin_page_notices' );
 
 function wpfa_admin_page_notices(): void {
-    if ( ! isset( $_GET['wpfa_notice'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+    if ( ! isset( $_GET['wpfa_notice'] ) || ! is_string( $_GET['wpfa_notice'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
         return;
     }
     $notice = sanitize_key( wp_unslash( $_GET['wpfa_notice'] ) ); // phpcs:ignore WordPress.Security.NonceVerification

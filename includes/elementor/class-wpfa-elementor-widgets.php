@@ -1127,8 +1127,8 @@ class WPFA_Elementor_Reset_Password_Widget extends WPFA_Elementor_Base_Widget {
     protected function render(): void {
         $this->maybe_print_script_data();
         $s = $this->get_settings_for_display();
-        $rp_key   = sanitize_text_field( wp_unslash( $_GET['key']   ?? '' ) );
-        $rp_login = sanitize_text_field( wp_unslash( $_GET['login'] ?? '' ) );
+        $rp_key   = is_string( $_GET['key']   ?? '' ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) )   : '';
+        $rp_login = is_string( $_GET['login'] ?? '' ) ? sanitize_text_field( wp_unslash( $_GET['login'] ) ) : '';
         $is_editor = \Elementor\Plugin::$instance->editor && \Elementor\Plugin::$instance->editor->is_edit_mode();
 
         // Resolve the "request new link" URL: custom override > auto-detected from settings

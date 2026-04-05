@@ -229,7 +229,7 @@ function wpfa_maybe_redirect_logged_in_user(): void {
     }
 
     // 1. Honour an explicit redirect_to if present.
-    $redirect_to = isset( $_GET['redirect_to'] ) // phpcs:ignore WordPress.Security.NonceVerification
+    $redirect_to = isset( $_GET['redirect_to'] ) && is_string( $_GET['redirect_to'] ) // phpcs:ignore WordPress.Security.NonceVerification
         ? wpfa_validate_redirect( wp_unslash( $_GET['redirect_to'] ) ) // phpcs:ignore WordPress.Security.NonceVerification, WordPress.Security.ValidatedSanitizedInput
         : '';
 

@@ -199,8 +199,10 @@ wp-frontend-auth/
 
 **Bug Fixes**
 
+- **High (Security):** Fixed PHP 8.0+ fatal `TypeError` crash via array-valued HTTP parameters. An attacker could send `log[]=foo`, `key[]=bar`, or any other array-formatted parameter to crash form handlers — `sanitize_user()`, `sanitize_text_field()`, `sanitize_key()`, and `wp_sanitize_redirect()` all expect strings and throw a fatal `TypeError` when given arrays on PHP 8.0+. This was a denial-of-service vector that bypassed nonce verification (the crash occurred after the nonce check passed). Fixed across 7 files by adding `is_string()` guards to all direct `$_GET`/`$_POST`/`$_REQUEST` access points, and by changing the core `wpfa_get_request_value()` helper to return an empty string for non-string input instead of passing raw arrays through.
 - **Medium (Security):** Added missing honeypot check to the lost-password handler. The honeypot hidden field was rendered in the form HTML but `wpfa_honeypot_is_spam()` was never called in `wpfa_handle_lostpassword()`. This allowed bots to automate the lost-password form and trigger mass password-reset emails to arbitrary users. The handler now checks the honeypot before calling `retrieve_password()` and returns a fake success response to fool the bot — identical to the existing pattern in the registration handler.
 - **Low:** Replaced deprecated `wp.passwordStrength.userInputBlacklist()` with `wp.passwordStrength.userInputDisallowedList()` in the password strength meter JavaScript. The old API was deprecated in WordPress 5.5.0 (Trac #50413) and logged a console warning on every keystroke. Since the plugin requires WP 6.5+, the replacement API is guaranteed available. Fixed in both the source and minified JS files.
+- **Low:** Fixed `wpfa_rate_limit_clear()` not deleting the companion `_ts` timestamp transient alongside the counter. After a successful login, the orphaned `_ts` transient caused `wpfa_rate_limit_remaining_seconds()` to return a stale non-zero lockout duration even though the user was no longer locked out — misleading any theme or plugin using the public API to display retry timers.
 
 ### 1.4.13
 

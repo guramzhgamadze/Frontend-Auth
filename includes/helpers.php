@@ -20,7 +20,19 @@ function wpfa_get_request_value( string $key, string $type = 'any' ) {
     } else {
         $value = $_REQUEST[ $key ] ?? '';
     }
-    return is_string( $value ) ? wp_unslash( $value ) : $value;
+    // FIX (v1.4.14): Reject non-string input to prevent PHP 8.0+ TypeError.
+    //
+    // If an attacker sends array-valued parameters (e.g. log[]=foo), the raw
+    // array would be returned and passed to sanitize_user(), sanitize_text_field(),
+    // etc. — all of which expect strings. On PHP 8.0+ this causes a fatal
+    // TypeError (e.g. strip_tags(): Argument #1 must be of type string, array given).
+    //
+    // No legitimate form submission sends array values for these fields, so
+    // silently returning an empty string is the correct defensive approach.
+    if ( ! is_string( $value ) ) {
+        return '';
+    }
+    return wp_unslash( $value );
 }
 
 function wpfa_is_post_request(): bool {
@@ -167,7 +179,7 @@ function wpfa_is_elementor_context(): bool {
         return true;
     }
     if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) {
-        $action = isset( $_REQUEST['action'] ) ? sanitize_key( $_REQUEST['action'] ) : '';
+        $action = isset( $_REQUEST['action'] ) && is_string( $_REQUEST['action'] ) ? sanitize_key( $_REQUEST['action'] ) : '';
         if ( str_starts_with( $action, 'elementor_' ) ) {
             return true;
         }
