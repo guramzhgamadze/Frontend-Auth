@@ -3,7 +3,7 @@
  * Plugin Name:       WP Frontend Auth
  * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
  * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.4.14
+ * Version:           1.4.16
  * Requires at least: 6.5
  * Requires PHP:      8.0
  * Author:            Guram Zhgamadze
@@ -67,7 +67,7 @@ if ( version_compare( get_bloginfo( 'version' ), '6.5', '<' ) ) {
     return;
 }
 
-define( 'WPFA_VERSION', '1.4.14' );
+define( 'WPFA_VERSION', '1.4.16' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -138,8 +138,15 @@ function wpfa_maybe_upgrade(): void {
 
     update_option( 'wpfa_version', WPFA_VERSION );
 
-    // Flush rewrite rules on shutdown (after all rules are registered).
-    add_action( 'shutdown', 'wpfa_flush_rewrite_rules' );
+    // FIX (v1.4.16): Flush at init priority 99 — after wpfa_add_rewrite_rules()
+    // (priority 10) has registered all rules, but still within the same init cycle.
+    // Previously this was scheduled on 'shutdown', meaning the flush only took
+    // effect on the NEXT request: /login/ would 404 on the first load after upgrade.
+    add_action( 'init', 'wpfa_flush_rewrite_rules', 99 );
+
+    // Purge cached 404s for auth pages from LiteSpeed Cache, Super Page Cache, etc.
+    // Must run after init so wpfa_get_action_url() can build correct URLs.
+    add_action( 'init', 'wpfa_purge_auth_page_cache', 100 );
 }
 
 /* -----------------------------------------------------------------------

@@ -37,6 +37,17 @@ add_action( 'wp',                 'wpfa_remove_unneeded_head_items' );
 add_action( 'template_redirect', 'wpfa_maybe_redirect_logged_in_user', 1 );
 
 /* -----------------------------------------------------------------------
+ * Cache exclusion — auth pages must never be served from cache.
+ *
+ * FIX (v1.4.16): LiteSpeed Cache and Super Page Cache were caching 404
+ * responses for /log-in/ etc. before rewrite rules were in place.
+ * After rules are flushed the pages work, but the cached 404 keeps
+ * being served. We now tell every major caching plugin to skip these
+ * URLs and we send no-store headers as a universal fallback.
+ * -------------------------------------------------------------------- */
+add_action( 'template_redirect', 'wpfa_exclude_from_cache', 0 );
+
+/* -----------------------------------------------------------------------
  * URL rewrites
  * -------------------------------------------------------------------- */
 add_filter( 'site_url',         'wpfa_filter_site_url',         10, 3 );
@@ -50,6 +61,7 @@ add_filter( 'lostpassword_url', 'wpfa_filter_lostpassword_url', 10, 2 );
  * These are no-ops when real pages exist with the same slug.
  * -------------------------------------------------------------------- */
 add_filter( 'the_posts',          'wpfa_the_posts',      10, 2 );
+add_filter( 'the_content',        'wpfa_maybe_inject_form', 20  );
 add_filter( 'page_template',      'wpfa_page_template',  10    );
 add_filter( 'body_class',         'wpfa_body_class',     10    );
 add_filter( 'get_edit_post_link', 'wpfa_no_edit_link',   10, 2 );
@@ -294,6 +306,78 @@ function wpfa_the_posts( array $posts, WP_Query $wp_query ): array {
     return [ $post ];
 }
 
+/**
+ * Auto-render the auth form inside virtual pages and empty real WPFA pages.
+ *
+ * FIX (v1.4.15): Virtual pages injected by wpfa_the_posts() have empty post_content.
+ * Without this filter, the theme renders a blank page — the user never sees a login form.
+ * This filter injects the appropriate form HTML into the_content so that:
+ *
+ *   1. Virtual pages (non-Elementor sites) display the form automatically.
+ *   2. Real WPFA pages that haven't had an Elementor widget added yet still work.
+ *   3. Real pages that DO have content (Elementor widgets, shortcodes, manual HTML)
+ *      are left untouched — we only inject when content is empty.
+ *
+ * Priority 20 runs after Elementor's own the_content filter (priority 9) and
+ * WordPress core's wpautop/shortcode filters (priority 10-11).
+ */
+function wpfa_maybe_inject_form( string $content ): string {
+    if ( ! in_the_loop() || ! is_main_query() ) {
+        return $content;
+    }
+    // If content already has substance, another renderer (Elementor, shortcode, editor)
+    // owns this page — do not duplicate the form.
+    //
+    // BUG FIX (v1.4.16): Elementor outputs empty wrapper divs even for pages with no
+    // widgets (e.g. a freshly-created WPFA page before the Login widget is added):
+    //   <div class="elementor elementor-123">...</div>
+    // This non-empty string caused the form to never be injected, leaving a blank page.
+    //
+    // We strip all HTML tags and check if there is any visible text or meaningful
+    // content. If the visible text is empty (only whitespace), we treat it as empty
+    // and inject the form — regardless of wrapper markup from Elementor or the theme.
+    //
+    // We intentionally do NOT strip shortcodes before this check — a page that has
+    // a [login_form] shortcode or similar already produces output and should be left alone.
+    if ( '' !== trim( wp_strip_all_tags( $content ) ) ) {
+        return $content;
+    }
+    $action = wpfa_get_current_action();
+    if ( ! $action ) {
+        return $content;
+    }
+
+    // Login: hide form if user is already logged in (unless reauth).
+    if ( 'login' === $action && is_user_logged_in() ) {
+        $is_reauth = ! empty( $_GET['reauth'] ); // phpcs:ignore WordPress.Security.NonceVerification
+        if ( ! $is_reauth ) {
+            return $content;
+        }
+    }
+
+    // Register: show message if registration is disabled.
+    if ( 'register' === $action && ! get_option( 'users_can_register' ) ) {
+        return '<p>' . esc_html__( 'User registration is currently not allowed.', 'wp-frontend-auth' ) . '</p>';
+    }
+
+    // Reset password: show error if key/login params are absent.
+    if ( 'resetpass' === $action ) {
+        $rp_key   = $_GET['key']   ?? ''; // phpcs:ignore WordPress.Security.NonceVerification
+        $rp_login = $_GET['login'] ?? ''; // phpcs:ignore WordPress.Security.NonceVerification
+        if ( ! is_string( $rp_key ) || ! is_string( $rp_login ) || '' === $rp_key || '' === $rp_login ) {
+            return '<div class="wpfa wpfa-form wpfa-form-resetpass">'
+                . '<ul class="wpfa-errors" role="alert">'
+                . '<li class="wpfa-error">' . esc_html__( 'This password reset link is invalid or has expired. Please request a new one.', 'wp-frontend-auth' ) . '</li>'
+                . '</ul>'
+                . '<p class="wpfa-links"><a href="' . esc_url( wpfa_get_action_url( 'lostpassword' ) ) . '">'
+                . esc_html__( 'Request a new password reset link', 'wp-frontend-auth' ) . '</a></p>'
+                . '</div>';
+        }
+    }
+
+    return wpfa_render_form( $action );
+}
+
 function wpfa_page_template( string $template ): string {
     if ( ! get_query_var( 'wpfa_action', '' ) ) {
         return $template;
@@ -377,29 +461,27 @@ function wpfa_no_comments( array $comments ): array {
  */
 function wpfa_is_login_url_exempt( string $redirect ): bool {
     // 1. Explicit opt-out from another plugin.
-    //    Usage: add_filter('wpfa_login_url_exempt', '__return_true') before calling
-    //    wp_login_url(), then remove_filter() immediately after.
     if ( apply_filters( 'wpfa_login_url_exempt', false, $redirect ) ) {
         return true;
     }
 
-    // 2. The redirect target is a REST endpoint on this site.
-    //
-    //    This is the precise, targeted signal that identifies an OAuth / MCP bridge
-    //    flow. When the MCP bridge calls wp_login_url( $authorize_endpoint ), the
-    //    $redirect is something like:
-    //        https://yogahub.online/wp-json/mcp/v1/oauth/authorize?response_type=...
-    //    That URL starts with rest_url() (https://yogahub.online/wp-json/).
-    //
-    //    WPFA's own /log-in/ page submits back to itself and never passes a REST URL
-    //    as the redirect, so normal frontend logins are never affected.
-    //
-    //    We intentionally do NOT exempt based on REST_REQUEST alone. Doing so broke
-    //    the login page: when Elementor's editor (which runs in a REST context)
-    //    called wp_login_url() internally, WPFA stood aside, and users were sent to
-    //    /wp-login.php instead of the custom /log-in/ page.
+    // 2. The redirect target is a REST endpoint on this site (e.g. MCP OAuth authorize URL).
     if ( '' !== $redirect && str_starts_with( $redirect, rest_url() ) ) {
         return true;
+    }
+
+    // 3. BUG FIX (v1.4.16): The current request IS a REST request for a non-Elementor
+    //    route (e.g. /wp-json/mcp/v1/...). In this context, any wp-login.php reference
+    //    that wpfa_filter_site_url() intercepts should go to the native login handler,
+    //    because the MCP bridge and other OAuth plugins control the redirect themselves.
+    //    wpfa_is_elementor_context() already exempts Elementor REST routes; this covers
+    //    all other REST routes (MCP, WooCommerce, custom plugins, etc.).
+    if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+        $route = $GLOBALS['wp']->query_vars['rest_route'] ?? '';
+        // Only exempt non-Elementor REST routes — Elementor REST was already handled above.
+        if ( '' !== $route && ! str_contains( (string) $route, '/elementor/' ) ) {
+            return true;
+        }
     }
 
     return false;
@@ -459,6 +541,22 @@ function wpfa_filter_site_url( string $url, string $path, $scheme ): string {
     if ( ! isset( $map[ $base ] ) ) {
         return $url;
     }
+
+    // BUG FIX (v1.4.16): Apply the same MCP/REST exemption that wpfa_filter_login_url()
+    // already had. The MCP Bridge plugin (and other OAuth handlers) call site_url('wp-login.php')
+    // directly — NOT wp_login_url() — so the exemption in wpfa_filter_login_url() never fired.
+    // Result: MCP OAuth redirects pointed to the WPFA /login/ page instead of /wp-login.php,
+    // breaking the authorization flow.
+    //
+    // Build a synthetic redirect from the full URL so wpfa_is_login_url_exempt() can
+    // inspect whether the destination is a REST endpoint on this site.
+    $synthetic_redirect = $url;
+    if ( wpfa_is_login_url_exempt( $synthetic_redirect ) ) {
+        return $url;
+    }
+    if ( ! isset( $map[ $base ] ) ) {
+        return $url;
+    }
     $action_from_query = $query['action'] ?? '';
     if ( is_array( $action_from_query ) ) {
         return $url;
@@ -504,4 +602,102 @@ function wpfa_filter_lostpassword_url( string $url, string $redirect ): string {
         $url = add_query_arg( 'redirect_to', rawurlencode( $redirect ), $url );
     }
     return $url;
+}
+
+/* -----------------------------------------------------------------------
+ * Cache exclusion
+ * -------------------------------------------------------------------- */
+
+/**
+ * Tell every known caching plugin not to cache the current page, and
+ * emit no-store HTTP headers as a universal fallback.
+ *
+ * Called at template_redirect priority 0 — before WordPress decides on a
+ * template, so caching plugins that hook template_redirect at priority 1
+ * (e.g. LiteSpeed Cache, WP Rocket) see our opt-out first.
+ */
+function wpfa_exclude_from_cache(): void {
+    if ( ! wpfa_is_wpfa_page() ) {
+        return;
+    }
+
+    // ── Universal: HTTP headers ──────────────────────────────────────────
+    // Sent before any output; tells CDNs, proxies, and browser caches
+    // not to store the response.
+    if ( ! headers_sent() ) {
+        header( 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0' );
+        header( 'Pragma: no-cache' );
+        header( 'Expires: Thu, 01 Jan 1970 00:00:00 GMT' );
+    }
+
+    // ── LiteSpeed Cache ──────────────────────────────────────────────────
+    // The X-LiteSpeed-Cache-Control header tells the LiteSpeed server
+    // (or OpenLiteSpeed) not to cache this response at the server level.
+    // The do_action call tells the LiteSpeed Cache WordPress plugin.
+    if ( ! headers_sent() ) {
+        header( 'X-LiteSpeed-Cache-Control: no-cache' );
+    }
+    // LiteSpeed Cache plugin API (class_exists guard — plugin may not be active)
+    if ( class_exists( 'LiteSpeed_Cache_API' ) && method_exists( 'LiteSpeed_Cache_API', 'no_cache' ) ) {
+        LiteSpeed_Cache_API::no_cache( 'wpfa-auth-page' );
+    }
+    // Modern LiteSpeed Cache 4.x+ API
+    do_action( 'litespeed_control_set_nocache', 'wpfa auth page' );
+
+    // ── Super Page Cache ─────────────────────────────────────────────────
+    // Super Page Cache checks for this constant to skip caching.
+    if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+        define( 'DONOTCACHEPAGE', true );
+    }
+
+    // ── WP Rocket ────────────────────────────────────────────────────────
+    if ( ! defined( 'DONOTROCKETOPTIMIZE' ) ) {
+        define( 'DONOTROCKETOPTIMIZE', true );
+    }
+
+    // ── W3 Total Cache ───────────────────────────────────────────────────
+    if ( ! defined( 'DONOTCACHEOBJECT' ) ) {
+        define( 'DONOTCACHEOBJECT', true );
+    }
+    if ( ! defined( 'DONOTMINIFY' ) ) {
+        define( 'DONOTMINIFY', true );
+    }
+
+    // ── WP Super Cache ───────────────────────────────────────────────────
+    // (different plugin from Super Page Cache — both check DONOTCACHEPAGE)
+
+    // ── Kinsta / Cloudflare / generic object cache bypass ────────────────
+    do_action( 'wpfa_exclude_from_cache' ); // allow third-party hooks
+}
+
+/**
+ * Purge cached versions of all WPFA pages from LiteSpeed Cache and
+ * Super Page Cache when the plugin version changes (e.g. after update).
+ *
+ * Called from wpfa_maybe_upgrade() via the 'wpfa_after_upgrade' action.
+ */
+function wpfa_purge_auth_page_cache(): void {
+    $urls = [];
+    foreach ( array_keys( wpfa_get_page_actions() ) as $action ) {
+        $urls[] = wpfa_get_action_url( $action );
+    }
+
+    // LiteSpeed Cache — purge by URL
+    foreach ( $urls as $url ) {
+        do_action( 'litespeed_purge_url', $url );
+    }
+
+    // Super Page Cache — purge all (no per-URL API in most versions)
+    if ( function_exists( 'super_cache_purge_all' ) ) {
+        super_cache_purge_all();
+    }
+    // WP Super Cache
+    if ( function_exists( 'wp_cache_clean_cache' ) ) {
+        global $file_prefix;
+        wp_cache_clean_cache( $file_prefix ?? 'wp-cache-', true );
+    }
+    // WP Rocket
+    if ( function_exists( 'rocket_clean_domain' ) ) {
+        rocket_clean_domain();
+    }
 }

@@ -150,6 +150,41 @@ td code{
 .code-block .comment{color:#5c6370}
 .code-block .cmd{color:var(--green)}
 
+/* ---- CHANGELOG ---- */
+.changelog-section{padding:40px 0 80px}
+.changelog-entry{
+  border:1px solid var(--border);border-radius:var(--radius);
+  background:var(--surface);margin-bottom:16px;overflow:hidden;
+}
+.changelog-header{
+  display:flex;align-items:center;gap:14px;
+  padding:18px 24px;border-bottom:1px solid var(--border);
+  background:var(--surface-2);
+}
+.version-tag{
+  font-family:var(--mono);font-size:.9rem;font-weight:500;
+  color:var(--accent);
+}
+.version-latest{
+  font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+  background:var(--accent-soft);color:var(--accent);
+  padding:3px 10px;border-radius:20px;
+}
+.changelog-body{padding:20px 24px}
+.changelog-body ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.changelog-body li{
+  display:flex;gap:10px;font-size:.875rem;color:var(--text-dim);
+  padding-left:0;line-height:1.55;
+}
+.fix-label{
+  flex-shrink:0;font-size:.7rem;font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;padding:2px 8px;border-radius:4px;
+  margin-top:1px;height:fit-content;
+}
+.fix-label.critical{background:var(--red-soft);color:var(--red)}
+.fix-label.high{background:var(--orange-soft);color:var(--orange)}
+.fix-label.medium{background:var(--accent-soft);color:var(--accent)}
+
 /* ---- REQUIREMENTS ---- */
 .reqs{
   display:flex;gap:16px;justify-content:center;flex-wrap:wrap;
@@ -176,6 +211,7 @@ footer a:hover{color:var(--accent)}
   .hero{padding:60px 0 40px}
   .grid{grid-template-columns:1fr}
   .reqs{flex-direction:column;align-items:center}
+  .changelog-header{flex-wrap:wrap}
 }
 </style>
 </head>
@@ -190,7 +226,7 @@ footer a:hover{color:var(--accent)}
     <div class="hero-actions">
       <a href="https://github.com/guramzhgamadze/Frontend-Auth/archive/refs/heads/main.zip" class="btn btn-primary">
         <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download v1.4.14
+        Download v1.4.16
       </a>
       <a href="https://github.com/guramzhgamadze/Frontend-Auth" class="btn btn-secondary">
         <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
@@ -323,13 +359,94 @@ footer a:hover{color:var(--accent)}
       <span class="cmd">wp plugin install wp-frontend-auth.zip --activate</span><br><br>
       <span class="comment"># Flush rewrite rules</span><br>
       <span class="cmd">wp rewrite flush</span><br><br>
-      <span class="comment"># Optional: create real pages for Elementor Theme Builder</span><br>
-      <span class="comment"># (or use the "Create Missing Pages" button in Settings)</span><br><br>
+      <span class="comment"># Link existing Elementor pages (or use "Create Pages" in Settings)</span><br>
+      <span class="comment"># If you built your auth pages manually, this detects and links them</span><br>
+      <span class="comment"># without creating duplicates. Then flush rules again.</span><br><br>
       <span class="comment"># Optional: enable AJAX forms and user-chosen passwords</span><br>
       <span class="cmd">wp option update wpfa_use_ajax 1</span><br>
       <span class="cmd">wp option update wpfa_user_passwords 1</span><br><br>
       <span class="comment"># That's it. Visit /login/ on your site.</span>
     </div>
+  </div>
+</section>
+
+<!-- CHANGELOG -->
+<section class="changelog-section" id="changelog">
+  <div class="container">
+    <div class="section-label">Changelog</div>
+    <div class="section-title">What's new</div>
+
+    <div class="changelog-entry">
+      <div class="changelog-header">
+        <span class="version-tag">v1.4.16</span>
+        <span class="version-latest">Latest</span>
+      </div>
+      <div class="changelog-body">
+        <ul>
+          <li>
+            <span class="fix-label critical">Critical</span>
+            <span>Fixed rewrite-rule flush timing — was scheduled on <code>shutdown</code>, so the flush only took effect on the <em>next</em> request. <code>/login/</code> would 404 on the first load after an upgrade or FTP deploy. Flush now runs on <code>init</code> priority&nbsp;99.</span>
+          </li>
+          <li>
+            <span class="fix-label critical">Critical</span>
+            <span>Fixed stale page-ID option causing hard 404s. <code>wpfa_get_page_id()</code> now verifies the stored ID refers to an existing published page, clearing the option if not — so the rewrite/virtual-page fallback can take over instead of silently failing.</span>
+          </li>
+          <li>
+            <span class="fix-label high">High</span>
+            <span>Fixed blank page on Elementor-built auth pages with no widgets. Elementor outputs empty wrapper divs that prevented <code>wpfa_maybe_inject_form()</code> from injecting the form. Now uses <code>wp_strip_all_tags()</code> to test for visible text rather than raw HTML length.</span>
+          </li>
+          <li>
+            <span class="fix-label high">High</span>
+            <span>Fixed MCP Bridge / OAuth redirect loop. <code>wpfa_filter_site_url()</code> was not applying the same REST exemption as <code>wpfa_filter_login_url()</code>. The MCP Bridge calls <code>site_url('wp-login.php')</code> directly, bypassing the existing exemption and pointing OAuth redirects at the WPFA frontend page.</span>
+          </li>
+          <li>
+            <span class="fix-label medium">Medium</span>
+            <span>Added cache exclusion for auth pages at <code>template_redirect</code> priority&nbsp;0 via <code>Cache-Control: no-store</code>, <code>X-LiteSpeed-Cache-Control</code>, <code>DONOTCACHEPAGE</code>, <code>DONOTROCKETOPTIMIZE</code>, and related constants for WP Rocket, W3 Total Cache, and WP Super Cache.</span>
+          </li>
+          <li>
+            <span class="fix-label medium">Medium</span>
+            <span>Added cache purge on version upgrade. On update, auth page URLs are purged from LiteSpeed Cache, Super Page Cache, WP Super Cache, and WP Rocket — clearing any stale 404 responses cached before rewrite rules existed.</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="changelog-entry">
+      <div class="changelog-header">
+        <span class="version-tag">v1.4.15</span>
+      </div>
+      <div class="changelog-body">
+        <ul>
+          <li>
+            <span class="fix-label critical">Critical</span>
+            <span>Added <code>wpfa_maybe_inject_form()</code> — auto-renders the auth form on virtual pages and empty real WPFA pages. Previously the theme rendered a blank page unless a widget was placed manually.</span>
+          </li>
+          <li>
+            <span class="fix-label medium">Medium</span>
+            <span>Fixed <code>Undefined array key "key"</code> / <code>"login"</code> PHP warnings in the Reset Password widget when URL parameters are absent.</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="changelog-entry">
+      <div class="changelog-header">
+        <span class="version-tag">v1.4.14</span>
+      </div>
+      <div class="changelog-body">
+        <ul>
+          <li>
+            <span class="fix-label high">High</span>
+            <span>Security: fixed PHP 8.0+ fatal <code>TypeError</code> DoS via array-valued HTTP parameters across 7 files.</span>
+          </li>
+          <li>
+            <span class="fix-label medium">Medium</span>
+            <span>Security: added missing honeypot check to lost-password handler — was renderable but never checked, allowing bots to trigger mass password-reset emails.</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
   </div>
 </section>
 

@@ -1127,8 +1127,14 @@ class WPFA_Elementor_Reset_Password_Widget extends WPFA_Elementor_Base_Widget {
     protected function render(): void {
         $this->maybe_print_script_data();
         $s = $this->get_settings_for_display();
-        $rp_key   = is_string( $_GET['key']   ?? '' ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) )   : '';
-        $rp_login = is_string( $_GET['login'] ?? '' ) ? sanitize_text_field( wp_unslash( $_GET['login'] ) ) : '';
+        // FIX (v1.4.15): Extract to local vars BEFORE the is_string guard.
+        // The previous code used `is_string( $_GET['key'] ?? '' )` which returns true
+        // for the '' default, then re-accessed `$_GET['key']` in the true branch —
+        // triggering "Undefined array key" when the param is absent.
+        $raw_key  = $_GET['key']   ?? ''; // phpcs:ignore WordPress.Security.NonceVerification
+        $raw_login = $_GET['login'] ?? ''; // phpcs:ignore WordPress.Security.NonceVerification
+        $rp_key   = is_string( $raw_key )   ? sanitize_text_field( wp_unslash( $raw_key ) )   : '';
+        $rp_login = is_string( $raw_login ) ? sanitize_text_field( wp_unslash( $raw_login ) ) : '';
         $is_editor = \Elementor\Plugin::$instance->editor && \Elementor\Plugin::$instance->editor->is_edit_mode();
 
         // Resolve the "request new link" URL: custom override > auto-detected from settings

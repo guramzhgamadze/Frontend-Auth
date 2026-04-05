@@ -197,9 +197,29 @@ function wpfa_create_action_pages(): void {
 
 /**
  * Return the stored page ID for a given action, or 0 if not found.
+ *
+ * BUG FIX (v1.4.16): Previously this returned the raw stored integer even when
+ * the page had been deleted (trashed or permanently removed). Callers that use
+ * this value to decide whether to add rewrite rules or inject virtual posts would
+ * then skip both paths — no rewrite rule was registered AND no virtual post was
+ * injected — leaving the /login/ URL as a hard 404.
+ *
+ * Fix: verify the stored ID refers to an existing published page. If the page no
+ * longer exists, clear the stale option and return 0 so the rewrite/virtual-page
+ * fallback can take over.
  */
 function wpfa_get_page_id( string $action ): int {
-    return (int) get_option( "wpfa_page_id_{$action}", 0 );
+    $id = (int) get_option( "wpfa_page_id_{$action}", 0 );
+    if ( ! $id ) {
+        return 0;
+    }
+    $post = get_post( $id );
+    if ( ! $post instanceof WP_Post || 'publish' !== $post->post_status ) {
+        // Stale option — clear it so callers don't keep trusting this dead ID.
+        delete_option( "wpfa_page_id_{$action}" );
+        return 0;
+    }
+    return $id;
 }
 
 /**
