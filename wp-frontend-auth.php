@@ -3,7 +3,7 @@
  * Plugin Name:       WP Frontend Auth
  * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
  * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.4.12
+ * Version:           1.4.14
  * Requires at least: 6.5
  * Requires PHP:      8.0
  * Author:            Guram Zhgamadze
@@ -54,8 +54,8 @@ if ( version_compare( PHP_VERSION, '8.0.0', '<' ) ) {
 /* -----------------------------------------------------------------------
  * WordPress version guard (runtime)
  *
- * wp_send_new_user_notification_to_user filter requires WP 6.1+.
- * sanitize_url() canonical since WP 5.9. We target 6.2+ minimum.
+ * wp_send_new_user_notification_to_user/to_admin filters require WP 6.1+.
+ * sanitize_url() restored (un-deprecated) since WP 5.9. We target 6.5+.
  * -------------------------------------------------------------------- */
 if ( version_compare( get_bloginfo( 'version' ), '6.5', '<' ) ) {
     add_action( 'admin_notices', static function (): void {
@@ -67,7 +67,7 @@ if ( version_compare( get_bloginfo( 'version' ), '6.5', '<' ) ) {
     return;
 }
 
-define( 'WPFA_VERSION', '1.4.12' );
+define( 'WPFA_VERSION', '1.4.14' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -75,8 +75,9 @@ define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
  * Translations — must run on 'init' so WP locale is finalised first.
  * -------------------------------------------------------------------- */
 // Translations are loaded automatically by WordPress since v4.6 (JIT loader).
-// load_plugin_textdomain() is no longer required and was soft-deprecated in
-// WP 6.7 (make.wordpress.org/core/2024/10/21/i18n-improvements-6-7/).
+// load_plugin_textdomain() is no longer necessary for plugins on WordPress.org
+// and was made redundant by WP 6.7's deferred translation loading system
+// (make.wordpress.org/core/2024/10/21/i18n-improvements-6-7/).
 // The .mo/.po files in /languages/ are auto-discovered from WP_LANG_DIR.
 
 /* -----------------------------------------------------------------------

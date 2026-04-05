@@ -253,7 +253,7 @@
         if ( window.wp && wp.passwordStrength ) {
             strength = wp.passwordStrength.meter(
                 pass1,
-                wp.passwordStrength.userInputBlacklist(),
+                wp.passwordStrength.userInputDisallowedList(),
                 pass2
             );
         } else {

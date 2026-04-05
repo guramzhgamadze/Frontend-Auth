@@ -139,7 +139,7 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lostpasswo
 | `wpfa_action_url` | — | Filter any action URL |
 | `wpfa_action_slug_{action}` | — | Filter a specific action's slug |
 | `wpfa_username_label` | — | Filter the username field label |
-| `wpfa_logged_in_redirect` | `admin_url()` | Redirect URL for logged-in users hitting login/register |
+| `wpfa_logged_in_redirect` | Role-based: `home_url()` for subscribers, `admin_url()` for privileged roles | Redirect URL for logged-in users hitting login/register |
 | `wpfa_logout_redirect` | `home_url()` | Redirect URL after logout |
 | `wpfa_login_url_exempt` | `false` | Return `true` to bypass WPFA's login URL rewriting (for OAuth/MCP flows) |
 | `wpfa_script_data` | — | Filter the JS config object |
@@ -194,6 +194,27 @@ wp-frontend-auth/
 ```
 
 ## Changelog
+
+### 1.4.14
+
+**Bug Fixes**
+
+- **Medium (Security):** Added missing honeypot check to the lost-password handler. The honeypot hidden field was rendered in the form HTML but `wpfa_honeypot_is_spam()` was never called in `wpfa_handle_lostpassword()`. This allowed bots to automate the lost-password form and trigger mass password-reset emails to arbitrary users. The handler now checks the honeypot before calling `retrieve_password()` and returns a fake success response to fool the bot — identical to the existing pattern in the registration handler.
+- **Low:** Replaced deprecated `wp.passwordStrength.userInputBlacklist()` with `wp.passwordStrength.userInputDisallowedList()` in the password strength meter JavaScript. The old API was deprecated in WordPress 5.5.0 (Trac #50413) and logged a console warning on every keystroke. Since the plugin requires WP 6.5+, the replacement API is guaranteed available. Fixed in both the source and minified JS files.
+
+### 1.4.13
+
+**Bug Fixes**
+
+- **High:** Fixed login redirect sending all roles (including admins, editors, authors, contributors) to `home_url()` or ignoring the `redirect_to` parameter. Previously, `wpfa_maybe_redirect_logged_in_user()` blindly redirected every logged-in user visiting the login/register page to `admin_url()`, ignoring the `redirect_to` query parameter entirely. Now, the `redirect_to` parameter is honoured for privileged roles, and only subscribers are redirected away from `wp-admin` (to `home_url()` instead).
+- **High:** Fixed login handler (`wpfa_handle_login`) also using `admin_url()` as the default redirect for subscribers. Subscribers now default to `home_url()` on login. If a subscriber's `redirect_to` points to `wp-admin`, it is overridden to `home_url()`.
+
+**Documentation Fixes**
+
+- Fixed incorrect inline comment claiming `wp_send_new_user_notification_to_admin` was introduced in WP 4.6 — the correct version is WP 6.1.0 (per `@since 6.1.0` in WordPress core source).
+- Fixed misleading comment in main plugin file referencing `load_plugin_textdomain()` as "soft-deprecated in WP 6.7" — it was not deprecated but made redundant by the deferred translation loading system.
+- Fixed WP version guard comment inconsistency (referenced "6.2+ minimum" when the actual requirement is 6.5+).
+- Updated `wpfa_logged_in_redirect` filter documentation to reflect the new role-based default (`home_url()` for subscribers, `admin_url()` for privileged roles).
 
 ### 1.4.12
 

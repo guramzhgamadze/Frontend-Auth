@@ -158,8 +158,15 @@ function wpfa_handle_login(): void {
 
     $redirect_to = wpfa_get_request_value( 'redirect_to' );
     $redirect_to = $redirect_to ? wpfa_validate_redirect( $redirect_to ) : '';
+
+    // Subscribers should never land on wp-admin.
+    $is_subscriber = count( $user->roles ) === 1 && in_array( 'subscriber', $user->roles, true );
+
     if ( empty( $redirect_to ) ) {
-        $redirect_to = apply_filters( 'login_redirect', admin_url(), $redirect_to, $user );
+        $default      = $is_subscriber ? home_url() : admin_url();
+        $redirect_to  = apply_filters( 'login_redirect', $default, $redirect_to, $user );
+    } elseif ( $is_subscriber && str_starts_with( $redirect_to, admin_url() ) ) {
+        $redirect_to = home_url();
     }
 
     do_action( 'wpfa_login_success', $user );
@@ -303,6 +310,24 @@ function wpfa_handle_lostpassword(): void {
             wpfa_send_ajax_error( [ 'errors' => [ wp_strip_all_tags( $message ) ] ] );
         }
         return;
+    }
+
+    // FIX (v1.4.14): Honeypot check was missing from this handler.
+    //
+    // The honeypot hidden field is rendered in EVERY form (via WPFA_Form::render()),
+    // but the spam check was only called in wpfa_handle_register(). Without this
+    // guard, bots can automate the lost-password form to trigger mass password-reset
+    // emails to arbitrary users — even if rate limiting slows them down, they still
+    // generate real emails up to the limit. The honeypot catches simple bots before
+    // retrieve_password() fires, and returns a fake success so the bot never adapts.
+    if ( wpfa_honeypot_is_spam() ) {
+        if ( $is_ajax ) {
+            wpfa_send_ajax_success( [
+                'message' => __( 'Check your email for a link to reset your password.', 'wp-frontend-auth' ),
+            ] );
+        }
+        wp_safe_redirect( add_query_arg( 'checkemail', 'confirm', wpfa_get_action_url( 'lostpassword' ) ) );
+        exit;
     }
 
     $result = retrieve_password(
@@ -522,7 +547,7 @@ function wpfa_maybe_suppress_user_notification( bool $send, WP_User $user ): boo
  * user-chosen passwords are enabled. wpfa_send_new_user_notifications() later
  * sends the one correct admin notification.
  *
- * wp_send_new_user_notification_to_admin was introduced in WP 4.6.
+ * wp_send_new_user_notification_to_admin was introduced in WP 6.1.
  * Source: developer.wordpress.org/reference/hooks/wp_send_new_user_notification_to_admin/
  */
 add_filter( 'wp_send_new_user_notification_to_admin', 'wpfa_maybe_suppress_admin_notification', 10, 2 );

@@ -228,7 +228,28 @@ function wpfa_maybe_redirect_logged_in_user(): void {
         return;
     }
 
-    $redirect = apply_filters( 'wpfa_logged_in_redirect', admin_url() );
+    // 1. Honour an explicit redirect_to if present.
+    $redirect_to = isset( $_GET['redirect_to'] ) // phpcs:ignore WordPress.Security.NonceVerification
+        ? wpfa_validate_redirect( wp_unslash( $_GET['redirect_to'] ) ) // phpcs:ignore WordPress.Security.NonceVerification, WordPress.Security.ValidatedSanitizedInput
+        : '';
+
+    // 2. Only subscribers should be kept away from the admin dashboard.
+    //    Admins / editors / authors / contributors go where they intended,
+    //    defaulting to wp-admin if no redirect_to was supplied.
+    $user = wp_get_current_user();
+    if ( count( $user->roles ) === 1 && in_array( 'subscriber', $user->roles, true ) ) {
+        // Subscriber: ignore any redirect_to that points to wp-admin.
+        if ( empty( $redirect_to ) || str_starts_with( $redirect_to, admin_url() ) ) {
+            $redirect_to = home_url();
+        }
+    } else {
+        // Privileged role: honour redirect_to, fall back to wp-admin.
+        if ( empty( $redirect_to ) ) {
+            $redirect_to = admin_url();
+        }
+    }
+
+    $redirect = apply_filters( 'wpfa_logged_in_redirect', $redirect_to );
     wp_safe_redirect( $redirect );
     exit;
 }
