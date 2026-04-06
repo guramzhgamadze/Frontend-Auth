@@ -245,19 +245,21 @@ function wpfa_maybe_redirect_logged_in_user(): void {
         ? wpfa_validate_redirect( wp_unslash( $_GET['redirect_to'] ) ) // phpcs:ignore WordPress.Security.NonceVerification, WordPress.Security.ValidatedSanitizedInput
         : '';
 
-    // 2. Only subscribers should be kept away from the admin dashboard.
-    //    Admins / editors / authors / contributors go where they intended,
-    //    defaulting to wp-admin if no redirect_to was supplied.
-    $user = wp_get_current_user();
-    if ( count( $user->roles ) === 1 && in_array( 'subscriber', $user->roles, true ) ) {
-        // Subscriber: ignore any redirect_to that points to wp-admin.
+    $user              = wp_get_current_user();
+    $is_subscriber     = count( $user->roles ) === 1 && in_array( 'subscriber', $user->roles, true );
+    $subscriber_default = apply_filters( 'wpfa_subscriber_redirect', home_url( '/instructor_dashboard/' ) );
+
+    if ( $is_subscriber ) {
+        // Subscribers must never reach wp-admin.
         if ( empty( $redirect_to ) || str_starts_with( $redirect_to, admin_url() ) ) {
-            $redirect_to = home_url();
+            $redirect_to = $subscriber_default;
         }
     } else {
-        // Privileged role: honour redirect_to, fall back to wp-admin.
+        // Privileged users: honour redirect_to if present, otherwise home_url().
+        // Do NOT default to admin_url() — if they landed on the login page without
+        // a redirect_to they came directly, not from an admin auth_redirect() call.
         if ( empty( $redirect_to ) ) {
-            $redirect_to = admin_url();
+            $redirect_to = home_url();
         }
     }
 
@@ -375,7 +377,15 @@ function wpfa_maybe_inject_form( string $content ): string {
         }
     }
 
-    return wpfa_render_form( $action );
+    return wpfa_render_form( $action, [
+        // FIX (v1.4.16): Pass redirect_to from the current URL into the form so it is
+        // written as a hidden field. Without this, the handler receives no redirect_to
+        // on POST and falls back to home_url() — even when the user arrived via e.g.
+        // /log-in/?redirect_to=/instructor_dashboard/.
+        'redirect_to' => isset( $_GET['redirect_to'] ) && is_string( $_GET['redirect_to'] ) // phpcs:ignore WordPress.Security.NonceVerification
+            ? wpfa_validate_redirect( wp_unslash( $_GET['redirect_to'] ) ) // phpcs:ignore WordPress.Security.NonceVerification, WordPress.Security.ValidatedSanitizedInput
+            : '',
+    ] );
 }
 
 function wpfa_page_template( string $template ): string {

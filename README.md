@@ -1,6 +1,6 @@
 # WP Frontend Auth
 
-Secure, accessible frontend login, registration, and password recovery forms for WordPress — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
+Secure, accessible frontend login, registration, and password recovery forms for WordPress — with rate limiting, honeypot protection, AJAX support, native Elementor widgets, and full cache-plugin compatibility.
 
 ## Description
 
@@ -13,6 +13,8 @@ WP Frontend Auth replaces the default `wp-login.php` experience with clean, them
 - **Lost Password / Reset Password** forms with full email flow integration.
 - **URL rewriting** — all `wp-login.php` links site-wide are transparently redirected to your frontend pages.
 - **Multisite support** — network-activated, per-site settings, signup/activation flow handled.
+- **Smart redirects** — `?redirect_to=` is fully honoured on both virtual and Elementor pages. Subscribers are blocked from wp-admin and sent to a configurable destination (default: `/instructor_dashboard/`, filterable via `wpfa_subscriber_redirect`). Privileged users always land where they intended.
+- **Cache exclusion** — auth pages are automatically excluded from LiteSpeed Cache, Super Page Cache, WP Rocket, W3 Total Cache, and WP Super Cache. Stale 404 cache entries are purged automatically on plugin update.
 
 ### Security
 
@@ -30,7 +32,7 @@ Four native `Widget_Base` widgets registered via `elementor/widgets/register`:
 
 | Widget | Class | Description |
 |--------|-------|-------------|
-| Login Form | `WPFA_Elementor_Login_Widget` | Login form with custom labels, placeholders, toggle text, and link overrides. Hidden when logged in (unless `reauth=1`). |
+| Login Form | `WPFA_Elementor_Login_Widget` | Login form with custom labels, placeholders, toggle text, and link overrides. Hidden when logged in (unless `reauth=1`). Automatically picks up `?redirect_to=` from the URL, taking priority over the editor-configured default. |
 | Registration Form | `WPFA_Elementor_Register_Widget` | Registration form with password + confirm fields when user-chosen passwords are enabled. Editor placeholder when registration is disabled. |
 | Lost Password Form | `WPFA_Elementor_Lost_Password_Widget` | Password recovery request form. |
 | Reset Password Form | `WPFA_Elementor_Reset_Password_Widget` | Password reset form — reads `?key=&login=` from the URL. Shows invalid-link message when parameters are missing, with an editor preview of the form fields. |
@@ -42,8 +44,6 @@ Only the Reset Password widget declares `is_dynamic_content(): true` (it reads `
 #### Page Management
 
 The plugin includes a **Page Management** panel in the settings screen. You can manually create real WordPress pages for each auth action so Elementor Theme Builder conditions work correctly (Singular > Page targeting by ID). Pages are **not** created automatically on activation — you choose when and whether to create them. The plugin works without real pages via its virtual URL rewrite system.
-
-If you created your Elementor auth pages manually (before or independently of the plugin), click **Create Pages** — the plugin will detect existing pages with matching slugs and link them without creating duplicates. After linking, go to **Settings → Permalinks → Save Changes** to remove the now-redundant rewrite rules for those slugs.
 
 ### Classic Widgets
 
@@ -69,8 +69,8 @@ All expose `show_instance_in_rest` for the WP 5.8+ block-based Widgets screen.
 1. Upload the `wp-frontend-auth` folder to `/wp-content/plugins/`.
 2. Activate the plugin through **Plugins → Installed Plugins**.
 3. Go to **Frontend Auth** in the admin sidebar to configure options.
-4. *(Optional)* Click **Create Pages** in the Page Management section to create real WordPress pages for Elementor Theme Builder targeting. If you already built your auth pages manually in Elementor, click this button to link them — the plugin detects existing pages with matching slugs and stores their IDs without creating duplicates.
-5. Visit **Settings → Permalinks** and click **Save Changes** to flush rewrite rules (or run `wp rewrite flush`).
+4. *(Optional)* Click **Create Missing Pages** in the Page Management section to create real WordPress pages for Elementor Theme Builder targeting.
+5. Rewrite rules are flushed automatically on the first page load after activation (v1.4.16+). If needed, go to **Settings → Permalinks** and click **Save Changes**, or run `wp rewrite flush`.
 6. *(Elementor users)* Open any page in the Elementor editor and search for "Login Form", "Registration Form", etc. in the widget panel under the **Frontend Auth** category.
 
 ## Settings
@@ -103,7 +103,7 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lostpasswo
 
 | Button | Description |
 |--------|-------------|
-| Create Pages | Creates real WordPress pages for any auth action that doesn't already have one. Existing pages with matching slugs are adopted, not duplicated. |
+| Create Missing Pages | Creates real WordPress pages for any auth action that doesn't already have one. Existing pages with matching slugs are adopted, not duplicated. |
 | Delete Auto-Created Pages | Removes only pages the plugin created. Pages you created manually and the plugin adopted are left intact. |
 
 ## Hooks & Filters
@@ -125,7 +125,7 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lostpasswo
 | `wpfa_registration_success` | `int $user_id` | After successful registration |
 | `wpfa_password_reset` | `WP_User $user` | After successful password reset |
 | `wpfa_rate_limit_recorded` | `string $action, int $attempts` | After a rate-limit bump |
-| `wpfa_exclude_from_cache` | — | Fires on auth pages at `template_redirect` priority 0 — hook here to add custom cache exclusion logic |
+| `wpfa_exclude_from_cache` | — | Fires on every auth page request — hook here to add custom cache exclusion logic |
 
 ### Filters
 
@@ -142,7 +142,8 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lostpasswo
 | `wpfa_action_url` | — | Filter any action URL |
 | `wpfa_action_slug_{action}` | — | Filter a specific action's slug |
 | `wpfa_username_label` | — | Filter the username field label |
-| `wpfa_logged_in_redirect` | Role-based: `home_url()` for subscribers, `admin_url()` for privileged roles | Redirect URL for logged-in users hitting login/register |
+| `wpfa_subscriber_redirect` | `home_url('/instructor_dashboard/')` | Destination URL for subscribers after login, or when they attempt to reach wp-admin. Override to send subscribers anywhere. |
+| `wpfa_logged_in_redirect` | Role-based (see below) | Final redirect URL for already-logged-in users visiting the login/register page |
 | `wpfa_logout_redirect` | `home_url()` | Redirect URL after logout |
 | `wpfa_login_url_exempt` | `false` | Return `true` to bypass WPFA's login URL rewriting (for OAuth/MCP flows) |
 | `wpfa_script_data` | — | Filter the JS config object |
@@ -154,11 +155,34 @@ Each action URL slug is customisable: `login`, `logout`, `register`, `lostpasswo
 | `wpfa_ajax_success_data` | — | Filter AJAX success response data |
 | `wpfa_ajax_error_data` | — | Filter AJAX error response data |
 
+#### Redirect priority order
+
+After a successful login, the destination is resolved in this order:
+
+1. `?redirect_to=` in the URL — always wins (user's actual intended destination, e.g. bounced from a protected page).
+2. Redirect URL configured in the Elementor widget editor panel — used when no URL parameter is present.
+3. Role-based fallback:
+   - **Subscriber** → `wpfa_subscriber_redirect` filter value (default `/instructor_dashboard/`). Subscribers can never reach wp-admin regardless of `redirect_to`.
+   - **All other roles** → `home_url()` when no redirect is specified. If WordPress bounced them from wp-admin (adding `?redirect_to=wp-admin/...` to the login URL), that redirect is honoured exactly.
+
 ## 3rd-Party Plugin Compatibility
 
 WP Frontend Auth fires the standard WordPress form hooks (`login_form`, `register_form`, `lostpassword_form`, `resetpass_form`) inside its forms. This means plugins that add fields to WordPress's native login — including 2FA plugins, CAPTCHA plugins, and social login plugins — will render their fields inside WPFA forms automatically.
 
-An OAuth/REST exemption system is also built in: when another plugin (e.g. WordPress MCP Bridge) calls `wp_login_url()` or `site_url('wp-login.php')` with a REST API redirect target, WPFA automatically stands aside and returns the native `/wp-login.php` URL. Plugins can also use the `wpfa_login_url_exempt` filter for explicit opt-out.
+An OAuth/REST exemption system is built in. When another plugin (e.g. WordPress MCP Bridge) calls `wp_login_url()` or `site_url('wp-login.php')` with a REST API redirect target, WPFA automatically stands aside and returns the native `/wp-login.php` URL so the OAuth handshake completes correctly. Plugins can also use the `wpfa_login_url_exempt` filter for an explicit opt-out.
+
+### Cache Plugin Compatibility (v1.4.16+)
+
+Auth pages are automatically excluded from caching and stale entries are purged on version change:
+
+| Plugin | Method |
+|--------|--------|
+| LiteSpeed Cache | `X-LiteSpeed-Cache-Control: no-cache` header + `litespeed_control_set_nocache` action + per-URL purge via `litespeed_purge_url` |
+| Super Page Cache | `DONOTCACHEPAGE` constant |
+| WP Rocket | `DONOTROCKETOPTIMIZE` constant |
+| W3 Total Cache | `DONOTCACHEOBJECT` + `DONOTMINIFY` constants |
+| WP Super Cache | `DONOTCACHEPAGE` constant |
+| Any plugin | `Cache-Control: no-store` + `Pragma: no-cache` HTTP headers. Hook `wpfa_exclude_from_cache` for custom logic. |
 
 ## File Structure
 
@@ -202,12 +226,17 @@ wp-frontend-auth/
 
 **Bug Fixes**
 
-- **Critical:** Fixed rewrite-rule flush timing. Previously `flush_rewrite_rules()` was scheduled on `shutdown`, so the flush only took effect on the *next* request — `/login/` would 404 on the first load after an upgrade or FTP deploy. The flush is now scheduled on `init` at priority 99, which runs after `wpfa_add_rewrite_rules()` (priority 10) has registered all rules but still within the same request cycle.
-- **Critical:** Fixed stale page-ID option causing hard 404s. `wpfa_get_page_id()` previously returned the stored integer even when the referenced page had been deleted or trashed. Callers that use the return value to decide whether to add a rewrite rule or inject a virtual post would then skip both paths — no rewrite rule was registered and no virtual post was injected — leaving the URL as a permanent 404. The function now verifies that the stored ID refers to an existing published page and clears the stale option if not, allowing the rewrite/virtual-page fallback to take over.
-- **High:** Fixed blank page on Elementor-built auth pages with no widgets. Elementor outputs empty wrapper divs (e.g. `<div class="elementor elementor-123">`) even for pages with no content, which caused the non-empty string check in `wpfa_maybe_inject_form()` to abort before injecting the form. The check now uses `wp_strip_all_tags()` to test for visible text rather than raw HTML, so empty Elementor wrappers are correctly treated as empty content and the form is injected.
-- **High:** Fixed MCP Bridge / OAuth redirect loop. `wpfa_filter_site_url()` was not applying the same REST/OAuth exemption that `wpfa_filter_login_url()` already had. The WordPress MCP Bridge plugin and other OAuth handlers call `site_url('wp-login.php')` directly — not `wp_login_url()` — so the existing exemption never fired, causing their authorization redirects to point to the WPFA frontend login page instead of `/wp-login.php` and breaking the OAuth flow. The same `wpfa_is_login_url_exempt()` logic now applies to both URL filters.
-- **Medium:** Added cache exclusion for auth pages. LiteSpeed Cache and Super Page Cache were caching 404 responses for `/login/` etc. before rewrite rules were in place; the cached 404 continued to be served even after the rules were flushed. Auth pages are now excluded from all major caching plugins at `template_redirect` priority 0 (before caching plugins hook in at priority 1) via: `Cache-Control: no-store` HTTP headers, `X-LiteSpeed-Cache-Control: no-cache` header, `litespeed_control_set_nocache` action, and the `DONOTCACHEPAGE` / `DONOTROCKETOPTIMIZE` / `DONOTCACHEOBJECT` / `DONOTMINIFY` constants.
-- **Medium:** Added cache purge on version upgrade. When the plugin version changes (upgrade, FTP deploy), `wpfa_purge_auth_page_cache()` now runs at `init` priority 100 and purges cached versions of all auth page URLs from LiteSpeed Cache (`litespeed_purge_url`), Super Page Cache (`super_cache_purge_all`), WP Super Cache (`wp_cache_clean_cache`), and WP Rocket (`rocket_clean_domain`).
+- **Critical:** Fixed blank login page on Elementor sites. `wpfa_maybe_inject_form()` checked `trim($content) !== ''` to decide whether to inject the form. Elementor outputs empty wrapper divs (`<div class="elementor elementor-123">…</div>`) even on pages with no widgets, so this check always passed and the form was never injected. Fixed by changing the check to `trim(wp_strip_all_tags($content)) !== ''` — Elementor's structural markup no longer blocks injection.
+- **Critical:** Fixed `?redirect_to=` being silently dropped after login. The login URL could carry `?redirect_to=/some-page/` but the form rendered with no hidden `redirect_to` field, so POST submissions had nothing to read — the handler fell through to `home_url()`. Fixed in two places: `wpfa_maybe_inject_form()` now passes the URL parameter into `wpfa_render_form()`, and `build_render_args()` in the Elementor widget now reads `$_GET['redirect_to']` first, taking priority over the editor-configured default redirect URL.
+- **High:** Fixed stale page ID causing hard 404s. `wpfa_get_page_id()` returned the stored integer even when the page had been deleted or trashed. Both `wpfa_add_rewrite_rules()` and `wpfa_the_posts()` trust this value and skip their fallback logic when it is non-zero — leaving `/login/` as a 404 with no rewrite rule and no virtual post. Fixed by validating the stored ID against a live, published `WP_Post`. Stale options are cleared automatically so the rewrite/virtual-page fallback takes over immediately.
+- **High:** Fixed caching plugins serving stale 404s for auth pages. LiteSpeed Cache and Super Page Cache were caching 404 responses for auth URLs before rewrite rules were in place. After rules were flushed, WordPress served the page correctly but the cache kept returning the old 404. Fixed by: (1) emitting `Cache-Control: no-store` and `X-LiteSpeed-Cache-Control: no-cache` headers on every auth page request; (2) defining `DONOTCACHEPAGE`, `DONOTROCKETOPTIMIZE`, `DONOTCACHEOBJECT`, and `DONOTMINIFY`; (3) calling `litespeed_control_set_nocache` and `LiteSpeed_Cache_API::no_cache()`; (4) purging all auth page URLs from LiteSpeed Cache, WP Rocket, WP Super Cache, and W3 Total Cache on every plugin version change.
+- **Medium:** Fixed rewrite rules flush happening too late after plugin update. The upgrade routine scheduled `flush_rewrite_rules()` on the `shutdown` hook, meaning rules were only written to the database at the end of the first page load — `/login/` would still 404 on that first request. Flush is now hooked at `init` priority 99, which runs after `wpfa_add_rewrite_rules()` (priority 10) but still within the same init cycle, so rules are in the database before any template is rendered.
+- **Medium:** Fixed `wpfa_filter_site_url()` missing the MCP/OAuth REST exemption that `wpfa_filter_login_url()` already had. The MCP Bridge plugin calls `site_url('wp-login.php')` directly — not `wp_login_url()` — so the exemption in the login URL filter never fired. WPFA rewrote the URL to the frontend `/log-in/` page, breaking the OAuth handshake. Fixed by applying `wpfa_is_login_url_exempt()` inside `wpfa_filter_site_url()` and extending the exemption to cover all non-Elementor `REST_REQUEST` contexts.
+
+**New Features**
+
+- **Subscriber redirect destination is now filterable** via `wpfa_subscriber_redirect`. Subscribers are blocked from wp-admin and sent to this URL instead (default: `home_url('/instructor_dashboard/')`). Override from your theme or a snippet: `add_filter('wpfa_subscriber_redirect', fn() => home_url('/dashboard/'));`
+- **`wpfa_exclude_from_cache` action** — fires on every auth page request. Hook here to add exclusion logic for custom or unlisted caching plugins.
 
 ### 1.4.15
 
@@ -229,21 +258,21 @@ wp-frontend-auth/
 
 **Bug Fixes**
 
-- **High:** Fixed login redirect sending all roles (including admins, editors, authors, contributors) to `home_url()` or ignoring the `redirect_to` parameter. Previously, `wpfa_maybe_redirect_logged_in_user()` blindly redirected every logged-in user visiting the login/register page to `admin_url()`, ignoring the `redirect_to` query parameter entirely. Now, the `redirect_to` parameter is honoured for privileged roles, and only subscribers are redirected away from `wp-admin` (to `home_url()` instead).
-- **High:** Fixed login handler (`wpfa_handle_login`) also using `admin_url()` as the default redirect for subscribers. Subscribers now default to `home_url()` on login. If a subscriber's `redirect_to` points to `wp-admin`, it is overridden to `home_url()`.
+- **High:** Fixed login redirect sending all roles (including admins, editors, authors, contributors) to `home_url()` or ignoring the `redirect_to` parameter. Previously, `wpfa_maybe_redirect_logged_in_user()` blindly redirected every logged-in user visiting the login/register page to `admin_url()`, ignoring the `redirect_to` query parameter entirely. Now, the `redirect_to` parameter is honoured for privileged roles, and only subscribers are redirected away from `wp-admin`.
+- **High:** Fixed login handler (`wpfa_handle_login`) also using `admin_url()` as the default redirect for non-subscribers. Privileged users with no `redirect_to` now go to `home_url()`. If a privileged user was bounced from wp-admin (WordPress adds `?redirect_to=wp-admin/...`), that redirect is honoured exactly.
 
 **Documentation Fixes**
 
-- Fixed incorrect inline comment claiming `wp_send_new_user_notification_to_admin` was introduced in WP 4.6 — the correct version is WP 6.1.0 (per `@since 6.1.0` in WordPress core source).
+- Fixed incorrect inline comment claiming `wp_send_new_user_notification_to_admin` was introduced in WP 4.6 — the correct version is WP 6.1.0.
 - Fixed misleading comment in main plugin file referencing `load_plugin_textdomain()` as "soft-deprecated in WP 6.7" — it was not deprecated but made redundant by the deferred translation loading system.
 - Fixed WP version guard comment inconsistency (referenced "6.2+ minimum" when the actual requirement is 6.5+).
-- Updated `wpfa_logged_in_redirect` filter documentation to reflect the new role-based default (`home_url()` for subscribers, `admin_url()` for privileged roles).
+- Updated `wpfa_logged_in_redirect` filter documentation to reflect the role-based redirect logic.
 
 ### 1.4.12
 
 **Bug Fixes**
 
-- **Critical:** Removed automatic page creation on plugin activation/reactivation. Previously, deactivating and reactivating the plugin created duplicate Login, Register, Lost Password, and Reset Password pages every cycle. Pages are now managed manually via a new **Page Management** panel in the settings screen with "Create Pages" and "Delete Auto-Created Pages" buttons.
+- **Critical:** Removed automatic page creation on plugin activation/reactivation. Previously, deactivating and reactivating the plugin created duplicate Login, Register, Lost Password, and Reset Password pages every cycle. Pages are now managed manually via a new **Page Management** panel in the settings screen with "Create Missing Pages" and "Delete Auto-Created Pages" buttons.
 - **Critical:** Fixed `render_form_title()` in Elementor widgets — `add_render_attribute()` was called with the return value of `get_render_attribute_string()` as the attribute name, producing malformed HTML on every widget with a form title.
 - **High:** Fixed password toggle click listeners stacking on Elementor pages. `document.addEventListener('click', ...)` was inside `bindPasswordToggle()` which runs on every Elementor `element_ready` re-render. After N renders, N+1 identical listeners caused rapid toggle flicker. Moved to a single document-level delegate registered once at boot.
 - **High:** Fixed Elementor `element_ready` hooks never registering. Used native `addEventListener` for `elementor/frontend/init` but Elementor fires this via jQuery's event system. Changed to `jQuery(window).on(...)`.

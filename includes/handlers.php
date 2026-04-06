@@ -159,15 +159,28 @@ function wpfa_handle_login(): void {
     $redirect_to = wpfa_get_request_value( 'redirect_to' );
     $redirect_to = $redirect_to ? wpfa_validate_redirect( $redirect_to ) : '';
 
-    // Subscribers should never land on wp-admin.
+    // Determine if this is a subscriber (no wp-admin access).
     $is_subscriber = count( $user->roles ) === 1 && in_array( 'subscriber', $user->roles, true );
 
+    // Subscriber default destination — where subscribers land when there is no
+    // explicit redirect_to, or when they try to go to wp-admin.
+    $subscriber_default = apply_filters( 'wpfa_subscriber_redirect', home_url( '/instructor_dashboard/' ) );
+
     if ( empty( $redirect_to ) ) {
-        $default      = $is_subscriber ? home_url() : admin_url();
-        $redirect_to  = apply_filters( 'login_redirect', $default, $redirect_to, $user );
+        // No redirect_to supplied:
+        //   — Subscribers → instructor dashboard (never wp-admin).
+        //   — Privileged users → home_url(). They came via the login page
+        //     directly (no ?redirect_to=), so sending them to wp-admin
+        //     is presumptuous. home_url() is a safe, neutral landing point.
+        //     They can navigate to wp-admin themselves if that's where they want to go.
+        //     Use the standard login_redirect filter so other plugins can override.
+        $default     = $is_subscriber ? $subscriber_default : home_url();
+        $redirect_to = apply_filters( 'login_redirect', $default, '', $user );
     } elseif ( $is_subscriber && str_starts_with( $redirect_to, admin_url() ) ) {
-        $redirect_to = home_url();
+        // Subscriber tried to go to wp-admin via redirect_to — block it.
+        $redirect_to = $subscriber_default;
     }
+    // For privileged users with a valid redirect_to: honour it exactly.
 
     do_action( 'wpfa_login_success', $user );
 

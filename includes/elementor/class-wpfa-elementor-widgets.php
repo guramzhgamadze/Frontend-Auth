@@ -594,6 +594,21 @@ abstract class WPFA_Elementor_Base_Widget extends \Elementor\Widget_Base {
         // Fix #3 — redirect_to is now a URL control (returns ['url'=>..., 'is_external'=>...])
         $redirect_raw = $s['redirect_to'] ?? '';
         $redirect_url = is_array( $redirect_raw ) ? ( $redirect_raw['url'] ?? '' ) : $redirect_raw;
+
+        // FIX (v1.4.16): Honour ?redirect_to= from the current URL.
+        // The editor control sets a *default* destination. But when a user is
+        // bounced to the login page because they tried to visit a protected page
+        // (e.g. /instructor_dashboard/ → /log-in/?redirect_to=/instructor_dashboard/),
+        // the URL parameter represents their actual intended destination and must
+        // take priority over whatever the editor default is.
+        $url_redirect = isset( $_GET['redirect_to'] ) && is_string( $_GET['redirect_to'] ) // phpcs:ignore WordPress.Security.NonceVerification
+            ? wpfa_validate_redirect( wp_unslash( $_GET['redirect_to'] ) ) // phpcs:ignore WordPress.Security.NonceVerification, WordPress.Security.ValidatedSanitizedInput
+            : '';
+
+        if ( '' !== $url_redirect ) {
+            $redirect_url = $url_redirect;
+        }
+
         return [
             'show_links'  => 'yes' === ( $s['show_links'] ?? 'yes' ),
             'redirect_to' => esc_url( $redirect_url ),
