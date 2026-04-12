@@ -9,6 +9,11 @@
  * uninstall.php is the correct place for cleanup — deactivation alone
  * should not delete user content (options survive deactivation by design).
  *
+ * v1.4.17: Added wildcard cleanup for any wpfa_slug_* options that may
+ * have been created by earlier versions or manual experimentation
+ * (e.g. wpfa_slug_dashboard). The explicit list below covers the known
+ * options, but the wildcard sweep at the end catches any stragglers.
+ *
  * @package WP_Frontend_Auth
  */
 
@@ -47,10 +52,25 @@ if ( is_multisite() ) {
 }
 
 function wpfa_uninstall_site( array $options, array $page_actions ): void {
-    // Delete options.
+    global $wpdb;
+
+    // Delete known options.
     foreach ( $options as $option ) {
         delete_option( $option );
     }
+
+    // Catch any orphaned wpfa_slug_* options not in the explicit list above
+    // (e.g. wpfa_slug_dashboard from earlier configuration experiments).
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+    $like     = $wpdb->esc_like( 'wpfa_slug_' ) . '%';
+    $orphaned = $wpdb->get_col( $wpdb->prepare(
+        "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+        $like
+    ) );
+    foreach ( $orphaned as $opt ) {
+        delete_option( $opt );
+    }
+
     // Delete auto-created pages and their stored IDs.
     // FIX: Only delete pages that were auto-created by the plugin (flagged with
     // _wpfa_auto_created post meta). Pages the user created manually and the

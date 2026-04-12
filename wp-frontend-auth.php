@@ -3,7 +3,7 @@
  * Plugin Name:       WP Frontend Auth
  * Plugin URI:        https://github.com/guramzhgamadze/Frontend-Auth
  * Description:       Secure, accessible frontend login, registration, and password recovery forms — with rate limiting, honeypot protection, AJAX support, and native Elementor widgets.
- * Version:           1.4.16
+ * Version:           1.4.17
  * Requires at least: 6.5
  * Requires PHP:      8.0
  * Author:            Guram Zhgamadze
@@ -67,7 +67,7 @@ if ( version_compare( get_bloginfo( 'version' ), '6.5', '<' ) ) {
     return;
 }
 
-define( 'WPFA_VERSION', '1.4.16' );
+define( 'WPFA_VERSION', '1.4.17' );
 define( 'WPFA_PATH',    plugin_dir_path( __FILE__ ) );
 define( 'WPFA_URL',     plugin_dir_url( __FILE__ ) );
 
@@ -136,6 +136,23 @@ function wpfa_maybe_upgrade(): void {
         }
     }
 
+    /* -------------------------------------------------------------------
+     * v1.4.17: One-time database cleanup.
+     *
+     * 1. Delete orphaned wpfa_slug_* options that don't belong to any
+     *    known action (e.g. wpfa_slug_dashboard from earlier experiments).
+     * 2. Prune excessive post revisions on auth pages — keep latest 5,
+     *    delete the rest. On Yogahub this removes ~240 revisions and
+     *    reclaims ~1.5 MB of wp_postmeta data (each Elementor revision
+     *    stores a full copy of _elementor_data).
+     *
+     * Both operations are idempotent and version-gated so they only run
+     * once during the upgrade from any earlier version to 1.4.17+.
+     * ---------------------------------------------------------------- */
+    if ( version_compare( $stored, '1.4.17', '<' ) && '' !== $stored ) {
+        wpfa_upgrade_cleanup_1_4_17();
+    }
+
     update_option( 'wpfa_version', WPFA_VERSION );
 
     // FIX (v1.4.16): Flush at init priority 99 — after wpfa_add_rewrite_rules()
@@ -147,6 +164,71 @@ function wpfa_maybe_upgrade(): void {
     // Purge cached 404s for auth pages from LiteSpeed Cache, Super Page Cache, etc.
     // Must run after init so wpfa_get_action_url() can build correct URLs.
     add_action( 'init', 'wpfa_purge_auth_page_cache', 100 );
+}
+
+/**
+ * v1.4.17 upgrade cleanup: orphaned options + auth page revision pruning.
+ *
+ * @access private — called only from wpfa_maybe_upgrade().
+ */
+function wpfa_upgrade_cleanup_1_4_17(): void {
+    global $wpdb;
+
+    /* ----- 1. Delete orphaned wpfa_slug_* options ----- */
+    $known_slugs = [ 'login', 'logout', 'register', 'lostpassword', 'resetpass' ];
+    $like        = $wpdb->esc_like( 'wpfa_slug_' ) . '%';
+
+    // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+    $all_slug_opts = $wpdb->get_col( $wpdb->prepare(
+        "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+        $like
+    ) );
+
+    foreach ( $all_slug_opts as $opt_name ) {
+        $action = str_replace( 'wpfa_slug_', '', $opt_name );
+        if ( ! in_array( $action, $known_slugs, true ) ) {
+            delete_option( $opt_name );
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( 'WPFA 1.4.17 cleanup: deleted orphaned option ' . $opt_name );
+            }
+        }
+    }
+
+    /* ----- 2. Prune auth page revisions (keep 5 newest) ----- */
+    $page_actions = [ 'login', 'register', 'lostpassword', 'resetpass' ];
+
+    foreach ( $page_actions as $action ) {
+        $page_id = (int) get_option( "wpfa_page_id_{$action}", 0 );
+        if ( ! $page_id ) {
+            continue;
+        }
+
+        // wp_get_post_revisions returns WP_Post[] keyed by ID, newest first.
+        $revisions = wp_get_post_revisions( $page_id, [ 'order' => 'DESC' ] );
+        $rev_ids   = array_keys( $revisions );
+
+        if ( count( $rev_ids ) <= 5 ) {
+            continue;
+        }
+
+        $to_delete = array_slice( $rev_ids, 5 );
+        $deleted   = 0;
+
+        foreach ( $to_delete as $rev_id ) {
+            if ( wp_delete_post_revision( $rev_id ) ) {
+                $deleted++;
+            }
+        }
+
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG && $deleted > 0 ) {
+            error_log( sprintf(
+                'WPFA 1.4.17 cleanup: pruned %d revisions from %s page (ID %d), kept 5',
+                $deleted,
+                $action,
+                $page_id
+            ) );
+        }
+    }
 }
 
 /* -----------------------------------------------------------------------
